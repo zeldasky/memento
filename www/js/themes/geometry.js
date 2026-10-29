@@ -21,10 +21,16 @@
   const NAME = { harmono: '진자 무늬', spiro: '나선 꽃 무늬', rose: '장미 곡선', rings: '겹 도형', phyllo: '씨앗 배열', moire: '물결 간섭', lissa3d: '매듭 곡선' };
   const ALL = Object.keys(NAME);
 
+  // 아이콘으로 고른 무늬('@rose' 등) — 그 무늬만, 무늬마다 어울리는 색. '@mix' 는 글자로 넣은 것처럼 돌아가며
+  const ICON_HUE = { harmono: 165, spiro: 275, rose: 345, rings: 42, phyllo: 48, moire: 200, lissa3d: 305, mix: 25 };
   const pick = (text) => {
     const whole = M.normalize(text), tokens = M.tokens(text), seed = U.hash(whole || '무늬');
+    const icon = whole.startsWith('@') ? whole.slice(1) : null;
+    if (icon && ICON_HUE[icon] !== undefined) {
+      return { hue: ICON_HUE[icon], mode: NAME[icon] ? icon : ALL[(seed >>> 9) % ALL.length], only: !!NAME[icon] };
+    }
     const hit = (dict) => { for (const k in dict) if (M.keywordHit(k, whole, tokens)) return dict[k]; return null; };
-    return { hue: hit(HUES) ?? seed % 360, mode: hit(MODES) ?? ALL[(seed >>> 9) % ALL.length] };
+    return { hue: hit(HUES) ?? seed % 360, mode: hit(MODES) ?? ALL[(seed >>> 9) % ALL.length], only: false };
   };
 
   // 곡선 점 목록 그리기: 앞 p 만큼은 밝게(색이 흐르며), 나머지는 희미하게. 진행 머리 위치를 돌려준다
@@ -54,12 +60,12 @@
     story: '이 낱말에서 뽑은 무늬예요. 밝게 그린 만큼이 지나온 삶이고, 무늬는 몇 분마다 천천히 다른 꼴로 바뀌어요.',
     describe: (text) => NAME[pick(text).mode],
     create(env) {
-      const { hue: baseHue, mode } = pick(env.text);
+      const { hue: baseHue, mode, only } = pick(env.text);
       const rng = U.rng(env.seed ^ 0x9e3779b9), d = U.drift(env.seed, 12);
       // 무늬 순서: 낱말이 고른 것부터, 나머지는 씨앗으로 섞는다
       const rest = ALL.filter((m) => m !== mode);
       for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
-      const order = [mode, ...rest];
+      const order = only ? [mode] : [mode, ...rest];
       // 무늬마다 정수 비율 바탕(낱말마다 다르다)
       // 보기 좋은 비율만 모아 두고 고른다(아무 정수나 쓰면 엉키거나 한 줄로 밋밋해진다)
       const HARM = [[1, 1], [1, 2], [2, 3], [3, 4], [1, 3], [3, 2], [2, 1]];
@@ -201,7 +207,17 @@
         resize(w, h) { W = w; H = h; },
         draw(g, { t, p }) {
           const cx = W / 2, cy = H * 0.6, R = Math.min(W * 0.4, H * 0.25);
-          const h1 = baseHue + (d(0, t, 140) - 0.5) * 70, h2 = h1 + 30 + d(1, t, 110) * 70;
+          let h1 = baseHue + (d(0, t, 140) - 0.5) * 70, h2 = h1 + 30 + d(1, t, 110) * 70;
+          // 뉴스 특이점: 좋은 소식이면 금빛으로 데워지고 숨 쉬듯 부푼다, 나쁜 소식이면 청회색으로 식고 오그라들며 떤다
+          const sg = env.sig || { level: 0, tone: 0 }, L = sg.level, good = sg.tone >= 0;
+          let Rs = R, jx = 0, jy = 0;
+          if (L > 0.01) {
+            const target = good ? 40 : 212;
+            const k = Math.min(1, L * 1.1);
+            h1 = U.lerp(h1, target, k); h2 = U.lerp(h2, good ? 18 : 195, k);
+            Rs = R * (good ? 1 + 0.07 * L * Math.sin(t * 2.4) + 0.04 * L : 1 - 0.1 * L);
+            if (!good) { jx = (Math.random() - 0.5) * 5 * L; jy = (Math.random() - 0.5) * 3 * L; }
+          }
           const bg = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.85);
           bg.addColorStop(0, U.hsl(h1, 38, 11)); bg.addColorStop(1, U.hsl(h1 + 20, 30, 3.5));
           g.fillStyle = bg; g.fillRect(0, 0, W, H);
@@ -214,8 +230,8 @@
           if (f > 0) layers.push([order[(idx + 1) % order.length], f]);
           for (const [name, a] of layers) {
             if (a <= 0.01) continue;
-            g.save(); g.translate(cx, cy);
-            const hp = fam[name](g, R, t, p, h1, h2, a);
+            g.save(); g.translate(cx + jx, cy + jy);
+            const hp = fam[name](g, Rs, t, p, h1, h2, a);
             if (hp) { // 진행 머리 — 그 무늬의 회전을 그대로 따른다
               U.glow(g, hp[0], hp[1], 20, U.hsl(h2, 90, 75, (0.55 + 0.15 * Math.sin(t * 2)) * a));
               g.fillStyle = `rgba(255,255,255,${a})`; U.dot(g, hp[0], hp[1], 3.5);

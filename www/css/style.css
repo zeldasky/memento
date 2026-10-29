@@ -20,6 +20,15 @@ html, body {
 button { font: inherit; color: inherit; cursor: pointer; }
 [hidden] { display: none !important; }
 
+/* 밝기(브라우저에서만 — 앱에서는 창 밝기를 바꾼다) */
+.dim { position: fixed; inset: 0; z-index: 3; background: #000; opacity: 0; pointer-events: none; transition: opacity 1.2s ease; }
+
+/* 화면 보호기: 글 · 단추를 모두 지우고 그림만 */
+.top, .words, .lifeline { transition: opacity 1.6s ease; }
+body.saver .top, body.saver .words, body.saver .lifeline { opacity: 0; pointer-events: none; }
+/* 「와」 넘어가기 동안은 글을 숨겼다가 섬광과 함께 떠오르게 */
+body.warping .words, body.warping .lifeline { opacity: 0; transition: none; }
+
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .45s ease; touch-action: none; }
 
 /* 위 띠 */
@@ -37,6 +46,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .chip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); flex: none; }
+.chip-dot.has-icon { width: auto; height: auto; border-radius: 0; background: none; box-shadow: none; color: var(--accent); display: grid; }
 .icon-btn {
   width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%;
   background: rgba(0, 0, 0, .22); border: 1px solid rgba(255, 255, 255, .16);
@@ -128,6 +138,20 @@ dialog::backdrop { background: rgba(4, 6, 10, .5); backdrop-filter: blur(6px); -
 .hint { margin: 0; font-size: 12.5px; color: var(--ink-faint); line-height: 1.5; }
 .hint.match { color: var(--ink-dim); min-height: 1.5em; }
 .hint.match b { color: var(--accent); font-weight: 600; }
+.theme-text { display: grid; gap: 8px; }
+#form label.range { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; }
+#form label.range input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+#form label.range output { font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+#saverSeg label { font-size: 13px; padding: 8px 4px; }
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; }
+.icon-grid button {
+  display: grid; justify-items: center; gap: 5px; padding: 10px 4px 8px; border-radius: 12px;
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--line); color: var(--ink-dim); font-size: 11.5px; line-height: 1.2;
+}
+.icon-grid button:hover { background: rgba(255, 255, 255, .09); }
+.icon-grid button[aria-checked='true'] { background: rgba(242, 200, 121, .16); border-color: rgba(242, 200, 121, .6); color: var(--ink); }
+.icon-grid button[aria-checked='true'] svg { color: var(--accent); }
+.icon-grid .sep { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-faint); margin: 4px 2px 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; }
 .chips button {
   padding: 6px 12px; border-radius: 999px; font-size: 13px;
