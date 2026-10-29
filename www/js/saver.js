@@ -18,6 +18,13 @@
       return [x, y];
     };
   };
+  // 숨: 1분에 6번(10초) — 4초 들이쉬고, 0.5초 머물고, 5.5초 내쉰다. 0(다 내쉼) ~ 1(다 들이쉼)
+  const BREATH = 10, IN = 4, HOLD = 0.5;
+  const breath = (t) => {
+    const u = ((t % BREATH) + BREATH) % BREATH, e = (k) => 0.5 - 0.5 * Math.cos(Math.PI * k);
+    return u < IN ? e(u / IN) : u < IN + HOLD ? 1 : 1 - e((u - IN - HOLD) / (BREATH - IN - HOLD));
+  };
+  M.breath = breath;
   // 10대 봄빛 → 50대 가을빛 → 80대 겨울빛
   const decadeHue = (d) => [150, 110, 70, 45, 30, 15, 355, 220, 205][Math.min(8, d)];
 
@@ -29,7 +36,8 @@
         const R = Math.min(W, H) * 0.24, [cx, cy] = pos(W, H, dt, R * 1.05), years = Math.floor(c.age), L = Math.max(years + 1, Math.round(c.lifespan));
         g.save(); g.translate(cx, cy); g.rotate(t * 0.01);
         for (let i = 1; i <= L; i++) {
-          const r = R * Math.sqrt(i / L), lived = i <= years, last = i === years;
+          // 숨이 가운데(태어남)에서 바깥(올해)으로 물결처럼 번진다
+          const r = R * Math.sqrt(i / L) * (1 + 0.07 * breath(t - (i / L) * 1.6)), lived = i <= years, last = i === years;
           g.beginPath();
           for (let k = 0; k <= 64; k++) {
             const a = (TAU * k) / 64, [ph, f] = wob[i % wob.length], rr = r * (1 + 0.03 * Math.sin(a * 3 + ph) + 0.015 * Math.sin(a * f * 5 + ph * 2));
@@ -55,7 +63,11 @@
           if (v.x < 0 || v.x > 1) { v.vx *= -1; v.x = U.clamp(v.x, 0, 1); }
           if (v.y < 0 || v.y > 1) { v.vy *= -1; v.y = U.clamp(v.y, 0, 1); }
         }
-        trail.push(shapes.map((s) => s.map((v) => [v.x * W, v.y * H])));
+        // 도형마다 제 중심을 기준으로 숨 쉬듯 부풀었다 가라앉는다(도형마다 숨이 조금씩 어긋난다)
+        trail.push(shapes.map((s, d) => {
+          const k = 1 + 0.12 * (breath(t - d * 0.7) - 0.5), mx = s.reduce((a, v) => a + v.x, 0) / 4, my = s.reduce((a, v) => a + v.y, 0) / 4;
+          return s.map((v) => [(mx + (v.x - mx) * k) * W, (my + (v.y - my) * k) * H]);
+        }));
         if (trail.length > 7) trail.shift();
         trail.forEach((frame, k) => {
           frame.forEach((pts, d) => {
@@ -76,15 +88,15 @@
         // 크기 · 중심은 한평생(L개) 별이 차지하는 범위로 맞춘다
         let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
         for (let i = 0; i < L; i++) { x0 = Math.min(x0, pts[i][0]); x1 = Math.max(x1, pts[i][0]); y0 = Math.min(y0, pts[i][1]); y1 = Math.max(y1, pts[i][1]); }
-        const mx0 = (x0 + x1) / 2, my0 = (y0 + y1) / 2, sc = R / (Math.max(x1 - x0, y1 - y0) / 2 || 1), cs = Math.cos(t * 0.01), sn = Math.sin(t * 0.01);
+        const b = breath(t), mx0 = (x0 + x1) / 2, my0 = (y0 + y1) / 2, sc = (R / (Math.max(x1 - x0, y1 - y0) / 2 || 1)) * (1 + 0.06 * b), cs = Math.cos(t * 0.01), sn = Math.sin(t * 0.01);
         const P = (i) => { const u = (pts[i][0] - mx0) * sc, v = (pts[i][1] - my0) * sc; return [cx + u * cs - v * sn, cy + u * sn + v * cs]; };
         g.strokeStyle = 'rgba(170,200,255,.22)'; g.lineWidth = 0.8; g.beginPath();
         for (let i = 0; i < Math.min(years, L); i++) { const [px, py] = P(i); i ? g.lineTo(px, py) : g.moveTo(px, py); }
         g.stroke();
         for (let i = 0; i < Math.min(L, pts.length); i++) {
           const [px, py] = P(i), lived = i < years, last = i === years - 1;
-          if (last) { U.glow(g, px, py, 14, `rgba(200,225,255,${0.4 + 0.25 * Math.sin(t * 2)})`); g.fillStyle = '#eef4ff'; U.dot(g, px, py, 2.2); continue; }
-          g.fillStyle = lived ? `rgba(200,220,255,${0.45 + 0.3 * pts[i][2]})` : 'rgba(200,220,255,.08)';
+          if (last) { U.glow(g, px, py, 10 + 10 * b, `rgba(200,225,255,${0.3 + 0.35 * b})`); g.fillStyle = '#eef4ff'; U.dot(g, px, py, 2.2); continue; }
+          g.fillStyle = lived ? `rgba(200,220,255,${(0.35 + 0.3 * pts[i][2]) * (0.75 + 0.35 * b)})` : 'rgba(200,220,255,.08)';
           U.dot(g, px, py, lived ? 1.1 + pts[i][2] * 0.8 : 0.8);
         }
       };
@@ -93,8 +105,8 @@
     moon(rng) {
       const pos = drifter(rng, 18);
       return (g, W, H, t, dt, c) => {
-        const r = Math.min(W, H) * 0.11, [x, y] = pos(W, H, dt, r * 1.6), f = U.clamp(c.p, 0.02, 0.98);
-        U.glow(g, x, y, r * 3, `rgba(220,226,255,${0.04 + 0.1 * Math.sin(Math.PI * f)})`);
+        const b = breath(t), r = Math.min(W, H) * 0.11 * (1 + 0.04 * b), [x, y] = pos(W, H, dt, r * 1.7), f = U.clamp(c.p, 0.02, 0.98);
+        U.glow(g, x, y, r * (2.4 + 1.2 * b), `rgba(220,226,255,${(0.03 + 0.1 * Math.sin(Math.PI * f)) * (0.6 + 0.8 * b)})`); // 달무리가 숨을 따라
         g.fillStyle = 'rgba(40,46,64,.55)'; U.dot(g, x, y, r);
         const k = Math.cos(TAU * f), waxing = f < 0.5;
         g.beginPath(); g.arc(x, y, r, -Math.PI / 2, Math.PI / 2, !waxing);
@@ -107,8 +119,9 @@
     clock(rng) {
       const pos = drifter(rng, 20);
       return (g, W, H, t, dt, c) => {
-        const R = Math.min(W, H) * 0.17, [x, y] = pos(W, H, dt, R * 1.15), a = -Math.PI / 2 + TAU * c.p;
+        const b = breath(t), R = Math.min(W, H) * 0.17 * (1 + 0.05 * b), [x, y] = pos(W, H, dt, R * 1.2), a = -Math.PI / 2 + TAU * c.p;
         g.save(); g.translate(x, y);
+        U.glow(g, 0, 0, R * (1.1 + 0.4 * b), `rgba(242,200,121,${0.03 + 0.05 * b})`);
         for (let i = 0; i < 24; i++) {
           const b = -Math.PI / 2 + (TAU * i) / 24, big = i % 6 === 0;
           g.strokeStyle = `rgba(230,220,200,${big ? 0.4 : 0.16})`; g.lineWidth = big ? 1.6 : 1;
@@ -121,9 +134,37 @@
         g.restore();
       };
     },
+    // 숨 쉬는 꽃: 지나온 10년마다 꽃잎 한 겹(지금 10년대 겹은 그만큼만). 들숨에 꽃잎이 벌어지고 날숨에 오므라든다
+    lotus(rng) {
+      const pos = drifter(rng, 20);
+      return (g, W, H, t, dt, c) => {
+        const R = Math.min(W, H) * 0.26, [x, y] = pos(W, H, dt, R * 1.3), n = Math.max(1, Math.ceil(c.age / 10)), b = breath(t);
+        g.save(); g.translate(x, y); g.rotate(t * 0.008);
+        U.glow(g, 0, 0, R * (0.8 + 0.6 * b), `rgba(255,200,170,${0.04 + 0.08 * b})`);
+        for (let d = n - 1; d >= 0; d--) {
+          const cur = d === n - 1, lit = cur ? 0.3 + 0.7 * ((c.age % 10) / 10) : 1;
+          const petals = 8, lay = (d + 1) / Math.max(n, 5);                        // 바깥 겹일수록 큰 꽃잎
+          const open = 0.35 + 0.65 * breath(t - d * 0.35);                         // 겹마다 숨이 조금씩 늦게
+          const len = R * (0.32 + 0.68 * lay) * (0.8 + 0.25 * open), wid = len * (0.18 + 0.2 * open);
+          for (let i = 0; i < petals; i++) {
+            const a = (TAU * i) / petals + d * (Math.PI / petals);
+            g.save(); g.rotate(a);
+            g.beginPath(); g.moveTo(0, 0);
+            g.bezierCurveTo(wid, -len * 0.35, wid * 0.8, -len * 0.85, 0, -len);
+            g.bezierCurveTo(-wid * 0.8, -len * 0.85, -wid, -len * 0.35, 0, 0);
+            g.strokeStyle = U.hsl(decadeHue(d), 60, 68, (0.25 + 0.45 * open) * lit);
+            g.lineWidth = 1.1; g.stroke();
+            g.fillStyle = U.hsl(decadeHue(d), 60, 55, 0.05 * lit * (0.5 + open)); g.fill();
+            g.restore();
+          }
+        }
+        g.fillStyle = `rgba(255,236,200,${0.5 + 0.4 * b})`; U.dot(g, 0, 0, 2 + 1.5 * b);
+        g.restore();
+      };
+    },
   };
   M.SAVER_SCENES = SCENES;
-  M.SAVER_NAMES = { mix: '돌아가며', rings: '나이테', decades: '10년 도형', stars: '별자리', moon: '인생의 달', clock: '인생 시계', theme: '주제 그림' };
+  M.SAVER_NAMES = { mix: '돌아가며', lotus: '숨 쉬는 꽃', rings: '나이테', decades: '10년 도형', stars: '별자리', moon: '인생의 달', clock: '인생 시계', theme: '주제 그림' };
 
   // 재생기: style 이 'mix' 면 5분마다 다음 상징으로 3초에 걸쳐 바꾼다
   M.saverPlayer = (seed = 3) => {

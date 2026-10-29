@@ -230,7 +230,7 @@
     } else if (scene) {
       g.save();
       if (sv > 0.01) {
-        const s = U.lerp(1, 0.42, sv), ox = Math.sin(t / 97) * W * 0.26 * sv, oy = Math.sin(t / 131 + 1.3) * H * 0.3 * sv;
+        const s = U.lerp(1, 0.42, sv) * (1 + 0.05 * M.breath(t) * sv), ox = Math.sin(t / 97) * W * 0.26 * sv, oy = Math.sin(t / 131 + 1.3) * H * 0.3 * sv;
         g.translate(W / 2 + ox, H * 0.6 + oy); g.scale(s, s); g.translate(-W / 2, -H * 0.6);
       }
       scene.draw(g, { t, dt, p, now: Date.now() });
