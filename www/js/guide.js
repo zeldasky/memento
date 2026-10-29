@@ -9,7 +9,7 @@
     { title: '지나온 시간을 느끼는 시계', art: svg('<path d="M6 44h52" opacity=".5"/><path d="M10 44a22 22 0 0 1 34.6-18" /><path d="M44.6 26A22 22 0 0 1 54 44" stroke-dasharray="1 5"/><circle cx="44.6" cy="26" r="5" fill="currentColor"/><path d="M38 52h10M34 57h18" opacity=".45"/>'),
       body: '지금 나이와 이만큼 살 것 같은 나이만 넣으세요. 숫자 대신 비유와 그림으로 지나온 만큼을 보여 줘요.' },
     { title: '열 때마다 다른 비유', art: svg('<rect x="8" y="14" width="30" height="22" rx="4"/><rect x="26" y="28" width="30" height="22" rx="4"/><path d="M14 22h14M14 28h9M32 36h16M32 42h11"/>'),
-      body: '하루 시계 · 마라톤 · 축구 · 서울→부산 KTX · 24절기 · 배터리… 스무 가지가 넘는 비유가 열 때마다 바뀌어요. 큰 글씨를 누르면 바로 다음 비유로.' },
+      body: '하루 시계 · 마라톤 · 축구 · 서울→부산 KTX · 24절기 · 배터리… 스무 가지가 넘는 비유가 열 때마다 바뀌어요. 위쪽 문장을 누르면 바로 다음 비유로.' },
     { title: '그림이 곧 내 인생', art: svg('<circle cx="32" cy="32" r="22" stroke-dasharray="1 5"/><path d="M32 10a22 22 0 0 1 21 28"/><circle cx="53" cy="38" r="3.6" fill="currentColor"/><circle cx="32" cy="32" r="4"/>'),
       body: '밝게 그려진 만큼이 지나온 삶이에요. 무늬 · 하늘 · 바다는 몇 분마다 천천히 바뀌어서, 켜 둘수록 다른 장면을 만나요.' },
     { title: '손가락으로 만지는 시간', art: svg('<path d="M8 32h48M8 32l6-6M8 32l6 6M56 32l-6-6M56 32l-6 6"/><path d="M28 50c0-6 2-9 4-9s4 3 4 9" opacity=".6"/><circle cx="32" cy="32" r="3" fill="currentColor"/>'),

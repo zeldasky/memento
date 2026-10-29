@@ -325,7 +325,42 @@
     store.set(MKEY, [...seen.filter((x) => x !== i), i].slice(-Math.floor(n * 0.6)));
     return i;
   }
-  function enter() { const w = $('#words'); w.classList.remove('enter'); void w.offsetWidth; w.classList.add('enter'); }
+  // 한 문장씩 돌려 보여 주기: 비유(머리) → 한마디 → 남은 것(돌 때마다 다른 항목) → (숫자도 보기면) 숫자 줄
+  const LINE_HOLD = 5200, LINE_FADE = 900;
+  let lines = { head: '', note: '' }, lineIdx = 0, lineTimer = null, lineSwap = null, detailText = '', swapping = false;
+  function putLine(text, instant) {
+    const el = $('#line');
+    clearTimeout(lineSwap);
+    const set = () => { el.textContent = text; el.dataset.len = text.length > 20 ? 'long' : ''; };
+    if (instant) { el.classList.remove('out', 'pre'); el.classList.add('live'); set(); return; }
+    el.classList.remove('live');
+    el.classList.add('out');                                  // 위로 흐릿하게 사라지고
+    swapping = true;
+    lineSwap = setTimeout(() => {
+      swapping = false;
+      set(); el.classList.remove('out'); el.classList.add('pre'); // 아래에서
+      void el.offsetWidth; el.classList.remove('pre');          // 스르륵 떠오른다
+    }, el.textContent ? LINE_FADE : 0);
+  }
+  function lineSeq() {
+    const seq = [() => lines.head, () => lines.note, () => { const r = remainItems[remainIdx % Math.max(1, remainItems.length)] || ''; remainIdx++; return r; }];
+    if (st.detail && detailText) seq.push(() => detailText);
+    return seq;
+  }
+  function nextLine() {
+    if (!ready() || scrub) return;
+    const seq = lineSeq();
+    lineIdx = (lineIdx + 1) % seq.length;
+    const txt = seq[lineIdx]();
+    if (txt) putLine(txt);
+  }
+  // 처음부터(비유 문장부터) 다시 — 열 때 · 비유를 바꿀 때
+  function enter() {
+    clearInterval(lineTimer);
+    renderWords(viewP(performance.now()));                  // 지금 비유로 문장을 먼저 만든다
+    lineIdx = 0; putLine(lines.head);
+    lineTimer = setInterval(nextLine, LINE_HOLD + LINE_FADE);
+  }
   function newSession() {
     sessionSeed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
     const rnd = U.rng(sessionSeed);
@@ -339,11 +374,12 @@
   function renderWords(p) {
     if (!ready()) return;
     const age = p * st.lifespan, s = M.sayMetaphor(meta, p, { age, lifespan: st.lifespan }, pk);
-    setText('#clockLabel', s.label);
-    setText('#clock', s.big);
-    $('#clockBox').dataset.len = s.big.length > 9 ? 'long' : s.big.length > 6 ? 'mid' : ''; // 긴 비유는 글씨를 줄여 한 줄에
-    setText('#clockSuffix', s.suf || '');
-    setText('#fraction', s.note || '');
+    lines = { head: `${s.label} ${s.big}${s.suf ? ` ${s.suf}` : ''}`, note: s.note || '' };
+    if (scrub) putLine(lines.head, true);                    // 끄는 동안은 비유 문장이 손가락을 바로 따라간다
+    else if (lineIdx === 0 && !swapping) {                   // 비유 문장이 떠 있으면 숫자가 굴러가는 대로(되감기 중) 그 자리에서 바뀐다
+      const el = $('#line');
+      if (el.textContent && el.textContent !== lines.head) el.textContent = lines.head;
+    }
     $('#lineDone').style.width = `${p * 100}%`;
     $('#lineDot').style.left = `${p * 100}%`;
     setText('#dotLabel', scrub ? `${Math.round(age)}세` : st.detail ? `${M.currentAge(st).toFixed(1)}세` : '지금');
@@ -353,9 +389,7 @@
     const now = Date.now(), age = M.currentAge(st, now);
     $('#words').hidden = false; $('#lifeline').hidden = false;
     remainItems = M.remainingThings(st.lifespan - age, pk, U.rng(sessionSeed)); // 세션 안에서는 순서가 그대로
-    $('#remain').textContent = remainItems[remainIdx % remainItems.length];
-    $('#detail').hidden = !st.detail;
-    if (st.detail) $('#detail').textContent = M.detailLine(st, now);
+    detailText = st.detail ? M.detailLine(st, now) : '';
     $('#endL').textContent = st.detail ? '0세' : '태어난 날';
     $('#endR').textContent = st.detail ? `${st.lifespan}세` : '마지막 날';
     shownP = -1;
@@ -458,7 +492,7 @@
     if (scrub) {
       const from = scrub.p;
       scrub = null; document.body.classList.remove('scrubbing');
-      replay(1100, from);
+      replay(1100, from); enter();                           // 놓으면 지금으로 돌아오며 첫 문장부터 다시
     } else if (e.type === 'pointerup' && performance.now() - down.t < 450) {
       const r = { x: e.clientX, y: e.clientY, start: performance.now(), sparks: [] };
       for (let i = 0; i < 14; i++) r.sparks.push({ a: Math.random() * U.TAU, v: 30 + Math.random() * 70 });
@@ -468,12 +502,6 @@
   };
   cv.addEventListener('pointerup', release);
   cv.addEventListener('pointercancel', release);
-  function nextRemain() {
-    if (remainItems.length < 2) return;
-    const el = $('#remain');
-    el.style.opacity = 0;
-    setTimeout(() => { remainIdx = (remainIdx + 1) % remainItems.length; el.textContent = remainItems[remainIdx]; el.style.opacity = 1; }, 350);
-  }
 
   /* ── 설정 ───────────────────────────── */
   const dlg = $('#settings');
@@ -723,8 +751,7 @@
   $('#openHelp').addEventListener('click', () => M.openGuide());
   $('#helpAgain').addEventListener('click', (e) => { e.preventDefault(); M.openGuide(); });
   $('#themeChip').addEventListener('click', () => openSettings(true));
-  $('#remain').addEventListener('click', nextRemain);
-  $('#clockBox').addEventListener('click', nextMetaphor);
+  $('#line').addEventListener('click', nextMetaphor);
   addEventListener('resize', resize);
   // 화면을 껐다 켜거나(잠금) 다른 앱에 다녀오면 새 세션 — 2초 넘게 가려졌을 때만
   let hiddenAt = 0;
@@ -747,7 +774,6 @@
   if (DREAM) { /* 시스템 화면 보호기: 아무것도 묻지 않는다 */ } else if (!st.guideSeen) M.openGuide({ first: true, onDone: () => { st.guideSeen = true; save(); if (!ready()) openSettings(false); } });
   else if (!ready()) openSettings(false);
   setInterval(updateWords, 30e3);
-  setInterval(nextRemain, 9e3);
   setInterval(() => { if (def && def.needs === 'weather' && !document.hidden) loadWeather(); }, 30 * 60e3);
   requestAnimationFrame(frame);
 })();
