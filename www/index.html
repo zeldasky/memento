@@ -13,7 +13,7 @@
 <div class="dim" id="dim"></div>
 
 <header class="top">
-  <button id="themeChip" class="chip" type="button" aria-label="주제 바꾸기">
+  <button id="themeChip" class="chip" type="button" aria-label="배경 · 관심 주제 바꾸기">
     <span class="chip-dot" id="themeChipIcon"></span><span id="themeName">날씨</span><span class="chip-more" id="themeMore" hidden></span>
   </button>
   <div class="top-right">
@@ -52,6 +52,23 @@
   </div>
 </dialog>
 
+<!-- 빠른 팝업: 위쪽 칩을 누르면 설정까지 가지 않고 배경 · 관심 주제만 -->
+<dialog id="quick">
+  <form id="quickForm" novalidate>
+    <h2>배경과 관심 주제</h2>
+    <div id="qBgGrid" class="icon-grid" role="radiogroup" aria-label="배경"></div>
+    <div class="int-rows">
+      <input class="int" id="qInt1" type="text" maxlength="30" autocomplete="off" placeholder="관심 주제 1 — 예: 삼성전자" aria-label="관심 주제 1">
+      <input class="int" id="qInt2" type="text" maxlength="30" autocomplete="off" placeholder="관심 주제 2 (선택)" aria-label="관심 주제 2">
+    </div>
+    <div class="chips" id="qIntChips"></div>
+    <div class="actions">
+      <button type="button" class="ghost" id="qClose">닫기</button>
+      <button type="submit" class="primary">적용</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="settings">
   <form id="form" novalidate>
     <h2>나의 시간</h2>
@@ -70,18 +87,19 @@
     </details>
 
     <fieldset>
-      <legend>주제 <span class="legend-sub">3개까지 · 동그라미를 누른 주제가 그림이 돼요</span></legend>
-      <div id="topicRows" class="topic-rows"></div>
-      <div class="seg" id="topicModeSeg">
-        <label><input type="radio" name="themeMode" value="text">글자로</label>
-        <label><input type="radio" name="themeMode" value="icon">아이콘으로</label>
-      </div>
-      <div id="themeTextBox" class="theme-text">
-        <div class="chips" id="themeChips"></div>
-      </div>
-      <div id="themeIconBox" class="icon-grid" role="radiogroup" aria-label="주제 아이콘" hidden></div>
+      <legend>배경 <span class="legend-sub">화면 그림 하나</span></legend>
+      <div id="bgGrid" class="icon-grid" role="radiogroup" aria-label="배경"></div>
     </fieldset>
     <p class="hint match" id="themeMatch"></p>
+
+    <fieldset>
+      <legend>관심 주제 <span class="legend-sub">2개까지 · 큰 뉴스가 나면 그림으로 조용히 알려요</span></legend>
+      <div class="int-rows">
+        <input class="int" id="fInt1" type="text" maxlength="30" autocomplete="off" placeholder="관심 주제 1 — 예: 삼성전자" aria-label="관심 주제 1">
+        <input class="int" id="fInt2" type="text" maxlength="30" autocomplete="off" placeholder="관심 주제 2 (선택)" aria-label="관심 주제 2">
+      </div>
+      <div class="chips" id="intChips"></div>
+    </fieldset>
 
     <fieldset id="placeBox">
       <legend>날씨 위치</legend>

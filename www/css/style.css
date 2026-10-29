@@ -171,6 +171,18 @@ dialog::backdrop { background: rgba(4, 6, 10, .5); backdrop-filter: blur(6px); -
 .hint.match { color: var(--ink-dim); min-height: 1.5em; }
 .hint.match b { color: var(--accent); font-weight: 600; }
 .theme-text { display: grid; gap: 8px; }
+#quickForm {
+  display: grid; gap: 14px; padding: 20px 18px 16px; max-height: calc(100dvh - 32px); overflow: auto;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 22px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#quickForm h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 20px; }
+.int-rows { display: grid; gap: 8px; }
+input.int {
+  width: 100%; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: 16px;
+}
+input.int:focus-visible { outline: 2px solid rgba(242, 200, 121, .65); outline-offset: 1px; }
 #form legend.sub { margin: 4px 0 0; font-size: 12px; }
 .legend-sub { font-size: 11.5px; color: var(--ink-faint); margin-left: 6px; }
 .topic-rows { display: grid; gap: 8px; }

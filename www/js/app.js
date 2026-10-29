@@ -5,7 +5,7 @@
   const $ = (s) => document.querySelector(s);
   const KEY = 'memento.v1', WKEY = 'memento.weather';
   const SEOUL = { lat: 37.5665, lon: 126.978, name: '서울', source: 'default' };
-  const SUGGEST = ['날씨', '바다', '우주', '달', '나무', '계절', '모래시계', '커피', '음악'];
+  const INT_SUGGEST = ['삼성전자', '비트코인', '엔비디아', '코스피', '금리', '부동산'];
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
@@ -13,23 +13,29 @@
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
     keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, saverStyle: 'mix', newsOn: true }, store.get(KEY) || {});
-  // 주제 3개: [{ v: '삼성전자', icon: false }, …], 메인(그림으로 쓰는 주제)은 main 번째. 예전 저장값(theme 하나)은 한 칸으로 옮긴다
-  if (!Array.isArray(st.topics) || !st.topics.length) {
-    st.topics = [{ v: st.theme || '날씨', icon: st.themeMode === 'icon' || (st.theme || '').startsWith('@') }];
-    st.main = 0;
-  }
   // 시스템 화면 보호기(안드로이드 Dream)로 떴는가 — 앱과 저장소가 달라서 앱이 적어 둔 설정을 받아 쓴다
   const DREAM = new URLSearchParams(location.search).get('dream') === '1';
   if (DREAM && window.MementoNative) {
     try { const saved = JSON.parse(window.MementoNative.settings() || '{}'); Object.assign(st, saved); } catch { /* 설정이 없으면 기본값 */ }
     st.guideSeen = true;
   }
+  // 배경 하나(theme — 아이콘 목록의 값) + 관심 주제 둘(interests). 예전 저장값(주제 3칸 topics/main)에서 옮긴다
+  const bgOf = (v) => { if (M.themeIcon(v)) return v; const d = M.matchTheme(v), ic = M.THEME_ICONS.find((i) => i.theme === d.name); return ic ? ic.theme : '@mix'; };
+  const migrated = !Array.isArray(st.interests) || Array.isArray(st.topics);
+  if (!Array.isArray(st.interests)) {
+    const old = Array.isArray(st.topics) ? st.topics : [];
+    st.interests = old.filter((x) => !x.icon && x.v && !x.v.startsWith('@') && !M.themeIcon(x.v)).map((x) => x.v).slice(0, 2);
+    if (!M.themeIcon(st.theme)) { const ic = old.map((x) => M.themeIcon(x.v)).find(Boolean); st.theme = ic ? ic.theme : bgOf(st.theme || '날씨'); }
+  }
+  st.theme = bgOf(st.theme || '날씨');
+  delete st.topics; delete st.main; delete st.themeMode;
   // 저장: 웹 저장소 + (앱에서는) 안드로이드 저장소에도 — 시스템 화면 보호기가 같은 설정으로 그린다
   const save = () => {
     store.set(KEY, st);
     const c = window.Capacitor, B = c && c.isNativePlatform && c.isNativePlatform() && c.Plugins.MementoBridge;
     if (B) B.saveSettings({ json: JSON.stringify(st) }).catch(() => {});
   };
+  if (migrated && !DREAM) save(); // 옮긴 값은 바로 저장(시스템 화면 보호기도 새 값으로)
   const ready = () => (st.birth || st.age != null) && st.lifespan > 0;
 
   // 시험용: ?t=초 로 그림 시계를 앞당겨 몇 분 뒤 모습을 바로 본다(주소는 아래에서 지워지므로 먼저 읽는다)
@@ -47,11 +53,9 @@
     if (q.has('age')) { st.age = +q.get('age'); st.ageSetAt = Date.now(); st.birth = ''; }
     if (q.has('birth')) st.birth = q.get('birth');
     if (q.has('life')) st.lifespan = +q.get('life');
-    if (q.has('theme')) { st.theme = q.get('theme'); st.topics = [{ v: st.theme, icon: st.theme.startsWith('@') }]; st.main = 0; }
-    if (q.has('topics')) { // 시험용: ?topics=삼성전자,@rose,비트코인&main=1
-      st.topics = q.get('topics').split(',').slice(0, 3).map((v) => ({ v, icon: v.startsWith('@') }));
-      st.main = Math.min(st.topics.length - 1, +(q.get('main') || 0)); st.theme = st.topics[st.main].v;
-    }
+    // ?theme=우주 (배경) — 배경 목록에 없는 낱말(예: 삼성전자)이면 배경은 여러 무늬, 그 낱말은 관심 주제로
+    if (q.has('theme')) { const v = q.get('theme'); st.theme = bgOf(v); if (!M.themeIcon(v) && st.theme === '@mix') st.interests = [v]; }
+    if (q.has('interests')) st.interests = q.get('interests').split(',').filter(Boolean).slice(0, 2); // ?interests=삼성전자,비트코인
     if (q.has('detail')) st.detail = q.get('detail') === '1';
     st.guideSeen = q.get('guide') !== '1'; // 시험용 주소로 열면 가이드를 건너뛴다(?guide=1 이면 보여 줌)
     save();
@@ -81,8 +85,7 @@
   function applyNews() {
     const sample = M.SAMPLE_NEWS[newsPreview] || M.SAMPLE_NEWS.normal;
     // 뉴스는 글자로 넣은 주제만 살핀다(아이콘 주제 · 기하 무늬 값은 뉴스 낱말이 아니다). 미리보기는 그 첫 주제 이름으로
-    const newsTopics = st.topics.filter((x) => !x.icon && x.v && !x.v.startsWith('@')).map((x) => x.v);
-    const label = newsTopics[0] || (M.themeIcon(st.theme) ? M.themeIcon(st.theme).label : st.theme || '주제');
+    const label = st.interests[0] || (M.themeIcon(st.theme) ? M.themeIcon(st.theme).label : '주제');
     const sig = newsPreview === 'normal' ? null : M.detectSignal(label, sample.titles, sample.baseline);
     if (sig) startEvent(sig); else if (eventOn) ev.stop(t);
   }
@@ -97,14 +100,13 @@
     if (scene) scene.resize(W, H);
   }
 
-  // 위쪽 칩: 메인 주제(아이콘이면 아이콘 + 이름, 아니면 점 + 낱말) + 나머지 주제 수(+2)
+  // 위쪽 칩: 배경(아이콘 + 이름) + 관심 주제 수(이름은 화면에 드러내지 않는다)
   function applyThemeChip() {
     const text = (st.theme || '').trim() || '날씨', ic = M.themeIcon(text), dot = $('#themeChipIcon');
     $('#themeName').textContent = ic ? ic.label : text;
     dot.classList.toggle('has-icon', !!ic);
     dot.innerHTML = ic ? M.iconSvg(ic.svg, 17) : '';
-    const more = st.topics.filter((x) => x.v).length - 1;
-    $('#themeMore').hidden = more < 1; $('#themeMore').textContent = `+${more}`;
+    $('#themeMore').hidden = !st.interests.length; $('#themeMore').textContent = `관심 ${st.interests.length}`;
   }
   function applyTheme(fade) {
     const text = (st.theme || '').trim() || '날씨';
@@ -403,7 +405,7 @@
   /* ── 뉴스 살펴보기: 화면이 보이는 동안 20분마다 글자 주제의 뉴스를 받아 특이점이면 장면 ── */
   const NKEY = 'memento.news', provider = M.newsProvider();
   let newsBusy = false, newsLast = 0, newsNote = '';
-  const textTopics = () => st.topics.filter((x) => !x.icon && x.v && !x.v.startsWith('@')).map((x) => x.v);
+  const textTopics = () => st.interests.filter(Boolean);
   async function pollNews() {
     if (!provider || !st.newsOn || !ready() || newsBusy || document.hidden) return;
     const topics = textTopics();
@@ -456,7 +458,7 @@
   }
   const touched = () => { lastTouch = Date.now(); };
   setInterval(() => {
-    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#guide').open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
+    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#quick').open && !$('#guide').open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
     if (!saverOn) return;
     const on = Date.now() - saverSince;
     if (!saverDeep && on > 30 * 60e3) { saverDeep = true; applyBrightness(); }
@@ -511,89 +513,37 @@
   function radio(name, value) { const el = document.querySelector(`input[name="${name}"][value="${value}"]`); if (el) el.checked = true; }
   function radioValue(name) { const el = document.querySelector(`input[name=${name}]:checked`); return el ? el.value : null; }
 
-  // 주제 3칸 — 칸마다 글자로(아무 낱말) 또는 아이콘으로(목록에서 고르기). 동그라미 = 메인(그림으로 쓰는 주제).
-  // 칸을 누르면 그 칸을 고치는 중이 되고, 아래 [글자로 | 아이콘으로] · 낱말 칩 · 아이콘 목록이 그 칸에 적용된다
-  let slots = [], mainIdx = 0, editIdx = 0, pickedIcon = M.THEME_ICONS[0];
-  const themeMode = () => radioValue('themeMode') || 'text';
-  const slotTheme = (s) => (s && s.v.trim()) || '';
-  const chosenTheme = () => slotTheme(slots[mainIdx]) || slots.map(slotTheme).find(Boolean) || '날씨';
-  const X_SVG = '<path d="M6 6l12 12M18 6L6 18"/>';
-  function renderTopicRows(focus) {
-    const box = $('#topicRows'); box.innerHTML = '';
-    slots.forEach((s, i) => {
-      const row = document.createElement('div');
-      row.className = `topic-row${i === editIdx ? ' editing' : ''}`;
-      const pickL = document.createElement('label'); pickL.className = 'main-pick'; pickL.title = '그림으로 쓸 메인 주제';
-      pickL.innerHTML = `<input type="radio" name="mainTopic" value="${i}"${i === mainIdx ? ' checked' : ''}><span></span>`;
-      pickL.firstChild.onchange = () => { mainIdx = i; syncThemeHint(); };
-      row.append(pickL);
-      const ic = s.icon ? M.themeIcon(s.v) : null;
-      if (ic) {
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'topic-icon';
-        b.innerHTML = `${M.iconSvg(ic.svg, 20)}<span></span>`; b.lastChild.textContent = ic.label;
-        b.onclick = () => { editIdx = i; radio('themeMode', 'icon'); pickedIcon = ic; syncThemeMode(); };
-        row.append(b);
-      } else {
-        const inp = document.createElement('input');
-        inp.type = 'text'; inp.className = 'topic-text'; inp.maxLength = 30; inp.autocomplete = 'off';
-        inp.value = s.v; inp.placeholder = ['주제 1 — 예: 날씨, 삼성전자', '주제 2 (선택)', '주제 3 (선택)'][i];
-        inp.setAttribute('aria-label', `주제 ${i + 1}`);
-        inp.onfocus = () => { if (editIdx !== i || themeMode() !== 'text') { editIdx = i; radio('themeMode', 'text'); markEditing(); syncThemeMode(true); } };
-        inp.oninput = () => { s.v = inp.value; syncThemeHint(); };
-        row.append(inp);
-        if (focus && i === editIdx) setTimeout(() => inp.focus(), 0);
-      }
-      const clr = document.createElement('button'); clr.type = 'button'; clr.className = 'clear'; clr.setAttribute('aria-label', `주제 ${i + 1} 지우기`);
-      clr.innerHTML = M.iconSvg(X_SVG, 16); clr.hidden = !s.v;
-      clr.onclick = () => { s.v = ''; s.icon = false; editIdx = i; radio('themeMode', 'text'); renderTopicRows(true); syncThemeMode(true); };
-      row.append(clr);
-      box.append(row);
-    });
-  }
-  const markEditing = () => [...$('#topicRows').children].forEach((r, i) => r.classList.toggle('editing', i === editIdx));
-  function buildIconGrid() {
-    const box = $('#themeIconBox');
+  // 배경(아이콘 하나) · 관심 주제(글자 둘) — 설정과 빠른 팝업이 같이 쓴다
+  let pickedBg = '날씨';
+  function buildBgGrid(box, onPick) {
     M.THEME_ICONS.forEach((ic, i) => {
       if (i === 0 || i === 7) {
         const sep = document.createElement('div'); sep.className = 'sep'; sep.textContent = i === 0 ? '그림' : '기하 무늬';
         box.append(sep);
       }
       const b = document.createElement('button');
-      b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.id = ic.id;
+      b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.theme = ic.theme;
       b.innerHTML = `${M.iconSvg(ic.svg, 26)}<span></span>`;
       b.lastChild.textContent = ic.label;
-      b.onclick = () => { pickedIcon = ic; slots[editIdx] = { v: ic.theme, icon: true }; renderTopicRows(); syncThemeHint(); };
+      b.onclick = () => { pickedBg = ic.theme; onPick(); };
       box.append(b);
     });
   }
-  // keep: 칸 내용을 그대로 두고 보기만 바꾼다(입력칸에 막 들어왔을 때)
-  function syncThemeMode(keep) {
-    const icon = themeMode() === 'icon', s = slots[editIdx];
-    if (!keep && s) {
-      if (!icon && s.icon) { // 아이콘 → 글자: 기하 무늬 값('@rose')은 글자로 못 쓰니 비우고, 그림 이름(날씨 등)은 그대로
-        s.icon = false; s.v = s.v.startsWith('@') ? '' : s.v; renderTopicRows(true);
-      }
-    }
-    $('#themeTextBox').hidden = icon; $('#themeIconBox').hidden = !icon;
-    syncThemeHint();
-  }
+  const syncBgGrid = (box) => { for (const b of box.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.theme === pickedBg)); };
   function syncThemeHint() {
-    const text = chosenTheme(), s = slots[editIdx];
-    const d = M.matchTheme(text), ic = M.themeIcon(text);
-    const look = ic ? `${ic.label} 그림` : d.id === 'geometry' ? `「${text}」에서 뽑은 ${d.describe(text)}` : `${d.name} 그림`;
-    const editingIcon = s && s.icon ? s.v : null;
-    for (const b of $('#themeIconBox').querySelectorAll('button')) b.setAttribute('aria-checked', String(!!editingIcon && M.themeIcon(editingIcon) && b.dataset.id === M.themeIcon(editingIcon).id));
-    $('#themeMatch').innerHTML = '';
-    const b = document.createElement('b'); b.textContent = look;
-    // 받침 있으면 '으로', 없거나 ㄹ 받침이면 '로'
-    const jong = (look.charCodeAt(look.length - 1) - 0xac00) % 28;
-    $('#themeMatch').append('메인 → ', b, `${jong > 0 && jong !== 8 ? '으로' : '로'} 보여줘요. ${d.story}`);
-    const news = slots.filter((x) => !x.icon && x.v.trim() && !x.v.startsWith('@')).map((x) => x.v.trim());
-    if (news.length) $('#themeMatch').append(document.createElement('br'), `뉴스 특이점(시험판)은 ${news.map((n) => `「${n}」`).join(' ')}을 살펴요.`);
-    const cur = s && !s.icon ? s.v.trim() : '';
-    for (const c of $('#themeChips').children) c.classList.toggle('on', c.textContent === cur);
-    for (const r of $('#topicRows').querySelectorAll('.clear')) r.hidden = !slots[+r.getAttribute('aria-label').match(/\d/)[0] - 1].v;
+    syncBgGrid($('#bgGrid'));
+    const ic = M.themeIcon(pickedBg), d = M.matchTheme(pickedBg);
+    $('#themeMatch').textContent = `${ic ? ic.label : d.name} — ${d.story}`;
     $('#placeBox').hidden = d.needs !== 'weather';
+  }
+  const readInts = (a, b) => [a, b].map((sel) => $(sel).value.trim()).filter(Boolean);
+  // 관심 주제 낱말 칩: 누르면 비어 있는 칸에(둘 다 차 있으면 둘째 칸에)
+  function buildIntChips(box, a, b) {
+    for (const w of INT_SUGGEST) {
+      const c = document.createElement('button'); c.type = 'button'; c.textContent = w;
+      c.onclick = () => { const el = !$(a).value.trim() ? $(a) : $(b); el.value = w; };
+      box.append(c);
+    }
   }
   function syncBirth() {
     const has = !!$('#fBirth').value;
@@ -625,11 +575,8 @@
     $('#fLife').value = st.lifespan || '';
     $('#fBirth').value = st.birth || '';
     $('#birthBox').open = !!st.birth;
-    slots = [0, 1, 2].map((i) => ({ v: (st.topics[i] && st.topics[i].v) || '', icon: !!(st.topics[i] && st.topics[i].icon && M.themeIcon(st.topics[i].v)) }));
-    mainIdx = Math.min(st.main || 0, 2); editIdx = mainIdx;
-    pickedIcon = M.themeIcon(slots[editIdx].v) || M.THEME_ICONS[0];
-    radio('themeMode', slots[editIdx].icon ? 'icon' : 'text');
-    renderTopicRows();
+    pickedBg = st.theme;
+    $('#fInt1').value = st.interests[0] || ''; $('#fInt2').value = st.interests[1] || '';
     pickedCity = st.place && st.place.source === 'city' ? st.place : null;
     radio('placeMode', pickedCity ? 'city' : 'geo');
     $('#fCity').value = pickedCity ? pickedCity.name : '';
@@ -650,10 +597,10 @@
     syncScreenForm();
     $('#formError').textContent = '';
     $('#cancelBtn').hidden = !ready();
-    syncBirth(); syncThemeMode(); syncPlace();
+    syncBirth(); syncThemeHint(); syncPlace();
     if (!dlg.open) dlg.showModal();
     if (!ready()) $('#fAge').focus();
-    else if (focusTheme && themeMode() === 'text') { const inp = $('#topicRows').children[editIdx].querySelector('.topic-text'); if (inp) inp.focus(); }
+    else if (focusTheme) $('#fInt1').focus();
   }
 
   function cityButtons(list) {
@@ -697,18 +644,13 @@
     }
     st.lifespan = life;
     const oldTheme = st.theme, oldPlace = JSON.stringify(st.place);
-    // 빈 칸은 빼고 저장. 메인 칸이 비었으면 첫 주제가 메인
-    const filled = slots.map((s, i) => ({ s, i })).filter((x) => x.s.v.trim());
-    if (!filled.length) return showError('주제를 하나 이상 넣어 주세요');
-    st.topics = filled.map((x) => ({ v: x.s.v.trim(), icon: x.s.icon }));
-    st.main = Math.max(0, filled.findIndex((x) => x.i === mainIdx));
-    st.theme = st.topics[st.main].v;
-    st.themeMode = st.topics[st.main].icon ? 'icon' : 'text';
+    st.theme = pickedBg;
     if (radioValue('placeMode') === 'city') { if (pickedCity) st.place = pickedCity; }
     else if (st.place && st.place.source === 'city') st.place = null;
     st.detail = radioValue('detail') === 'more';
     newsPreview = radioValue('newsPreview') || 'normal';
     const topicsChanged = JSON.stringify(textTopics());
+    st.interests = readInts('#fInt1', '#fInt2');
     st.newsOn = radioValue('newsOn') !== 'off';
     st.keepOn = radioValue('keepOn') === 'on';
     st.saverMin = +(radioValue('saver') || 0);
@@ -730,16 +672,30 @@
   }
 
   /* ── 묶기 ───────────────────────────── */
-  for (const s of SUGGEST) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = s;
-    b.onclick = () => { slots[editIdx] = { v: s, icon: false }; renderTopicRows(); syncThemeHint(); };
-    $('#themeChips').append(b);
+  buildBgGrid($('#bgGrid'), syncThemeHint);
+  buildIntChips($('#intChips'), '#fInt1', '#fInt2');
+  // 빠른 팝업(위쪽 칩): 배경 · 관심 주제만 바로 바꾼다
+  const qdlg = $('#quick');
+  buildBgGrid($('#qBgGrid'), () => syncBgGrid($('#qBgGrid')));
+  buildIntChips($('#qIntChips'), '#qInt1', '#qInt2');
+  function openQuick() {
+    if (!ready()) { openSettings(false); return; }
+    pickedBg = st.theme; syncBgGrid($('#qBgGrid'));
+    $('#qInt1').value = st.interests[0] || ''; $('#qInt2').value = st.interests[1] || '';
+    qdlg.showModal();
   }
-  buildIconGrid();
+  $('#quickForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const oldTheme = st.theme, oldInts = JSON.stringify(st.interests);
+    st.theme = pickedBg; st.interests = readInts('#qInt1', '#qInt2');
+    save(); qdlg.close();
+    if (st.theme !== oldTheme) applyTheme(true); else applyThemeChip();
+    if (JSON.stringify(st.interests) !== oldInts) setTimeout(pollNews, 1500);
+  });
+  $('#qClose').addEventListener('click', () => qdlg.close());
   document.querySelectorAll('input[name=keepOn]').forEach((r) => r.addEventListener('change', syncScreenForm));
   $('#fBright').addEventListener('input', syncScreenForm);
   $('#fSaverBright').addEventListener('input', syncScreenForm);
-  document.querySelectorAll('input[name=themeMode]').forEach((r) => r.addEventListener('change', () => syncThemeMode(false)));
   $('#fBirth').addEventListener('input', syncBirth);
   document.querySelectorAll('input[name=placeMode]').forEach((r) => r.addEventListener('change', syncPlace));
   $('#fCity').addEventListener('input', searchCity);
@@ -750,7 +706,7 @@
   $('#openSettings').addEventListener('click', () => openSettings(false));
   $('#openHelp').addEventListener('click', () => M.openGuide());
   $('#helpAgain').addEventListener('click', (e) => { e.preventDefault(); M.openGuide(); });
-  $('#themeChip').addEventListener('click', () => openSettings(true));
+  $('#themeChip').addEventListener('click', openQuick);
   $('#line').addEventListener('click', nextMetaphor);
   addEventListener('resize', resize);
   // 화면을 껐다 켜거나(잠금) 다른 앱에 다녀오면 새 세션 — 2초 넘게 가려졌을 때만
