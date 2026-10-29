@@ -3,10 +3,10 @@
   "appName": "메멘토",
   "webDir": "www",
   "android": {
-    "appendUserAgent": "Memento/0.5.0 (+https://github.com/zeldasky/memento)"
+    "appendUserAgent": "Memento/0.6.0 (+https://github.com/zeldasky/memento)"
   },
   "ios": {
-    "appendUserAgent": "Memento/0.5.0 (+https://github.com/zeldasky/memento)",
+    "appendUserAgent": "Memento/0.6.0 (+https://github.com/zeldasky/memento)",
     "contentInset": "never"
   },
   "plugins": {

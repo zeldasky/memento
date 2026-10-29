@@ -38,8 +38,11 @@
       }
       for (const [w, n] of df) if (n >= 3 && (!best || n > best[1])) best = [w, n];
     }
-    // 세기: 기사 몰림 + 논조의 뚜렷함
-    const level = U.clamp(Math.max(burst, burst * 0.6 + Math.abs(tone) * 0.5, best && hits.size ? 0.55 : 0), 0, 1);
+    // 세기: 기사 몰림 + 논조의 뚜렷함. 논조 낱말만으로 울리려면 최근 기사의 4분의 1 이상(최소 3건)이 그 말을 써야 한다
+    // (진짜 뉴스에서는 "급등" 한 건쯤은 늘 있다)
+    const hitTotal = [...hits.values()].reduce((a, b) => a + b, 0);
+    const phrased = hitTotal >= Math.max(3, titles.length * 0.25) ? 0.55 : 0;
+    const level = U.clamp(Math.max(burst, burst * 0.6 + Math.abs(tone) * 0.5, phrased), 0, 1);
     if (level < 0.25) return null;                              // 평소
     return { topic, word: (best ? best[0] : topic).replace('어닝서프라이즈', '어닝 서프라이즈').replace('어닝쇼크', '어닝 쇼크'), level, tone, ratio };
   };

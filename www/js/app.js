@@ -12,7 +12,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 못 해도 화면은 돈다 */ } },
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
-    keepOn: false, saverMin: 0, bright: 100, saverBright: 25 }, store.get(KEY) || {});
+    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, newsOn: true }, store.get(KEY) || {});
   // 주제 3개: [{ v: '삼성전자', icon: false }, …], 메인(그림으로 쓰는 주제)은 main 번째. 예전 저장값(theme 하나)은 한 칸으로 옮긴다
   if (!Array.isArray(st.topics) || !st.topics.length) {
     st.topics = [{ v: st.theme || '날씨', icon: st.themeMode === 'icon' || (st.theme || '').startsWith('@') }];
@@ -109,7 +109,7 @@
   }
 
   // 보여 줄 진행률 — 평소엔 진짜 값. 화면을 좌우로 끄는 동안은 손가락 자리(타임머신), 놓으면 지금으로 되돌아온다
-  let last = performance.now(), t = T_START, shownP = -1, scrub = null;
+  let last = performance.now(), t = T_START, shownP = -1, scrub = null, sv = 0;
   const anim = { from: 0, start: -1e9, dur: 2600 };
   const ease = (k) => 1 - (1 - k) ** 3;
   const realP = () => (ready() ? M.progress(st) : 0.5);
@@ -201,7 +201,25 @@
     const dt = Math.min(0.05, (now - last) / 1000) * slow;
     last = now; t += dt;
     const p = viewP(now);
-    if (scene) { g.save(); scene.draw(g, { t, dt, p, now: Date.now() }); g.restore(); }
+    // 화면 보호기(번인 막기): 그림을 작게 줄여 둥근 창 안에만, 그 창이 몇 분에 걸쳐 화면 곳곳을 떠돈다. 나머지는 검게(OLED 픽셀 끔)
+    sv += ((saverOn && !eventOn ? 1 : 0) - sv) * Math.min(1, dt * 1.2);
+    if (scene) {
+      g.save();
+      if (sv > 0.01) {
+        const s = U.lerp(1, 0.42, sv), ox = Math.sin(t / 97) * W * 0.26 * sv, oy = Math.sin(t / 131 + 1.3) * H * 0.3 * sv;
+        g.translate(W / 2 + ox, H * 0.6 + oy); g.scale(s, s); g.translate(-W / 2, -H * 0.6);
+      }
+      scene.draw(g, { t, dt, p, now: Date.now() });
+      g.restore();
+      if (sv > 0.01) {
+        const cx = W / 2 + Math.sin(t / 97) * W * 0.26 * sv, cy = H * 0.6 + Math.sin(t / 131 + 1.3) * H * 0.3 * sv;
+        const r = Math.min(W, H) * U.lerp(1.2, 0.3, sv), mask = g.createRadialGradient(cx, cy, r * 0.55, cx, cy, r);
+        mask.addColorStop(0, 'rgba(0,0,0,0)'); mask.addColorStop(1, `rgba(0,0,0,${sv})`);
+        g.fillStyle = mask; g.fillRect(0, 0, W, H);
+        g.fillStyle = `rgba(0,0,0,${sv})`; // 둥근 창 바깥은 완전히 검게
+        g.beginPath(); g.rect(0, 0, W, H); g.arc(cx, cy, r, 0, U.TAU, true); g.fill();
+      }
+    }
     if (eventOn && !ev.draw(g, W, H, t, dt)) endEvent();
     drawRipples(now);
     drawWarp(now);
@@ -322,6 +340,37 @@
     meta = pickMetaphor(Math.random);
     replay(1400, Math.max(0, realP() - 0.25)); enter(); shownP = -1;
   }
+
+  /* ── 뉴스 살펴보기: 화면이 보이는 동안 20분마다 글자 주제의 뉴스를 받아 특이점이면 장면 ── */
+  const NKEY = 'memento.news', provider = M.newsProvider();
+  let newsBusy = false, newsLast = 0, newsNote = '';
+  const textTopics = () => st.topics.filter((x) => !x.icon && x.v && !x.v.startsWith('@')).map((x) => x.v);
+  async function pollNews() {
+    if (!provider || !st.newsOn || !ready() || newsBusy || document.hidden) return;
+    const topics = textTopics();
+    if (!topics.length) { newsNote = '글자로 넣은 주제가 없어요 — 주제 칸에 낱말(예: 삼성전자)을 넣으면 살펴봐요'; return; }
+    newsBusy = true; newsLast = Date.now();
+    const db = store.get(NKEY) || {}, notes = [];
+    let fired = null;
+    for (const topic of topics) {
+      try {
+        const items = await provider.fetch(topic);
+        const sig = M.newsCheck(topic, items, db);
+        const r = db[topic];
+        notes.push(`${topic} 최근 3시간 ${r.recent}건(평소 ${r.baseline})${sig ? ` → ${sig.tone > 0.2 ? '좋은 소식' : sig.tone < -0.2 ? '나쁜 소식' : '큰 뉴스'}` : ''}`);
+        if (sig && !fired) fired = sig;
+      } catch (e) { console.warn(e); notes.push(`${topic} 못 받음`); }
+    }
+    for (const k of Object.keys(db)) if (!topics.includes(k)) delete db[k]; // 지운 주제의 기록은 버린다
+    store.set(NKEY, db);
+    const hm = new Date(newsLast).toTimeString().slice(0, 5);
+    newsNote = `${hm} 확인 · ${notes.join(' · ')}`;
+    if ($('#newsStatus')) $('#newsStatus').textContent = newsNote;
+    newsBusy = false;
+    if (fired && !eventOn) startEvent(fired);
+  }
+  setTimeout(pollNews, 5000);
+  setInterval(() => { if (Date.now() - newsLast > 20 * 60e3) pollNews(); }, 60e3);
 
   /* ── 화면: 켜 두기 · 밝기 · 화면 보호기 ── */
   // 앱에서는 플러그인(켜 두기 · 창 밝기 — 시스템 밝기 설정은 안 건드림), 브라우저에서는 검은 막으로 어둡게
@@ -517,6 +566,11 @@
     searchCity();
     radio('detail', st.detail ? 'more' : 'feel');
     radio('newsPreview', newsPreview);
+    radio('newsOn', st.newsOn ? 'on' : 'off');
+    $('#newsSource').textContent = provider ? `· ${provider.name}` : '';
+    $('#newsStatus').textContent = provider ? newsNote || '아직 확인 전이에요 (화면이 켜져 있는 동안 20분마다)' : '';
+    for (const el of $('#newsBox').querySelectorAll('.seg:first-of-type, #newsStatus')) el.hidden = !provider;
+    $('#newsBox').hidden = !provider && !M.SAMPLE_NEWS;
     radio('keepOn', st.keepOn ? 'on' : 'off');
     radio('saver', String(st.saverMin));
     $('#fBright').value = st.bright; $('#fSaverBright').value = st.saverBright;
@@ -581,6 +635,8 @@
     else if (st.place && st.place.source === 'city') st.place = null;
     st.detail = radioValue('detail') === 'more';
     newsPreview = radioValue('newsPreview') || 'normal';
+    const topicsChanged = JSON.stringify(textTopics());
+    st.newsOn = radioValue('newsOn') !== 'off';
     st.keepOn = radioValue('keepOn') === 'on';
     st.saverMin = +(radioValue('saver') || 0);
     st.bright = +$('#fBright').value; st.saverBright = +$('#fSaverBright').value;
@@ -593,6 +649,7 @@
       applyThemeChip();
       if (def && def.needs === 'weather' && JSON.stringify(st.place) !== oldPlace) { env.weather = null; loadWeather(); }
     }
+    if (JSON.stringify(textTopics()) !== topicsChanged || st.newsOn) setTimeout(pollNews, 1500); // 주제가 바뀌면 바로 한 번
     updateWords();
     return true;
   }

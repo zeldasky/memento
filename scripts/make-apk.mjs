@@ -51,12 +51,21 @@ if (!existsSync(localProps)) {
   writeFileSync(localProps, `sdk.dir=${sdk.replace(/\\/g, '/')}\n`)
 }
 
-// 3. 글꼴 → 4. 웹 자원 동기화 → 5. APK
+// --release: 플레이 스토어용 AAB(업로드 키 서명). 없으면 시험 설치용 디버그 APK
+const RELEASE = process.argv.includes('--release')
+
+// 3. 빌드 정보(www/js/build.js) — 출시판이면 구글 뉴스(개인 시험용 약관)가 꺼진다. 서버가 생기면 MEMENTO_NEWS_SERVER 로 주소를 넣는다
+const buildJs = join(ROOT, 'www', 'js', 'build.js')
+const buildDev = readFileSync(buildJs, 'utf8')
+const info = { channel: RELEASE ? 'release' : 'debug', version, newsServer: process.env.MEMENTO_NEWS_SERVER || '' }
+writeFileSync(buildJs, buildDev.replace(/window\.M\.BUILD = \{[^}]*\};/, `window.M.BUILD = ${JSON.stringify(info).replace(/"(\w+)":/g, '$1: ').replace(/,/g, ', ').replace(/"/g, "'")};`))
+process.on('exit', () => writeFileSync(buildJs, buildDev)) // 끝나면(실패해도) 'dev' 로 되돌린다
+console.log(`빌드 정보: ${JSON.stringify(info)}`)
+
+// 4. 글꼴 → 5. 웹 자원 동기화 → 6. 빌드
 run('node', ['scripts/copy-fonts.mjs'])
 run('npx', ['cap', 'sync', 'android'])
 
-// --release: 플레이 스토어용 AAB(업로드 키 서명). 없으면 시험 설치용 디버그 APK
-const RELEASE = process.argv.includes('--release')
 if (RELEASE && !existsSync(process.env.MEMENTO_KEYSTORE || 'C:/Users/zelda/keys/memento/keystore.properties'))
   fail('업로드 키(keystore.properties)를 찾지 못했어요. MEMENTO_KEYSTORE 로 위치를 알려 주세요.')
 const out = RELEASE
