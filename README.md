@@ -1,15 +1,19 @@
-# 메멘토 — 남은 시간
+# 인생 — 남은 시간을 느끼는 앱
 
-지금 나이와 "이만큼 살 것 같다"는 나이를 넣으면, 인생을 얼마나 지나왔는지 **정확한 숫자 대신 느낌으로** 보여 주는 웹 앱.
+지금 나이와 "이만큼 살 것 같다"는 나이를 넣으면, 인생을 얼마나 지나왔는지 **정확한 숫자 대신 느낌으로** 보여 주는 앱.
 배경은 고른 주제에 맞는 기하 도형·선의 움직임이고, 그 그림 자체가 지나온 만큼을 나타낸다.
 
-## 실행
+안드로이드 · iOS 공통(Capacitor 8). 안드로이드 먼저. 스토어 배포 예정 — 라이선스 검토는 [docs/라이선스-검토.md](docs/라이선스-검토.md).
 
-`C:\Users\zelda\myCode\memento\index.html` 을 브라우저(Chrome·Edge)로 열면 된다. 빌드 없음.
+## 빌드 · 설치
 
-- 처음 열면 설정 창이 뜬다: 지금 나이 · 살 것 같은 나이 · 주제 · (날씨면) 위치 · 숫자 보기 여부
-- 왼쪽 위 주제 칩을 누르면 주제를 바꾸고, 가운데 "남은 ○○" 줄을 누르면 다른 걸 보여 준다
-- 주소로 바로 채우기: `index.html?age=47&life=85&theme=바다&detail=1` (생일: `birth=1979-03-01`)
+```
+npm install
+npm run android:apk        → release/insaeng-<버전>.apk (디버그 서명, 시험 설치용)
+adb install -r release/insaeng-<버전>.apk
+```
+
+필요한 것: Node, JDK 21, 안드로이드 SDK. 아이콘·시작 화면을 다시 그릴 때는 `npm run icons`(Python + Pillow + numpy).
 
 ## 느낌 문장
 
@@ -37,16 +41,23 @@
 | 모래시계 | 모래시계, 시간, 모래 | 아래 쌓인 모래 | — |
 | 그 밖의 낱말 | 커피, 음악, 가족, 비트코인 … | 밝게 그린 만큼(나선 꽃 · 물결 · 겹 다각형 · 씨앗 배열) | — |
 
-날씨는 [Open-Meteo](https://open-meteo.com/) (키 없음)를 쓴다. 위치는 브라우저 현재 위치, 거절하면 서울. 설정에서 도시를 찾아 고정할 수 있다. 30분마다 새로 받는다.
+날씨는 MET Norway(노르웨이 기상청, CC BY 4.0) 자료. 위치는 폰의 대략 위치, 권한을 안 주면 서울. 설정에서 앱 안 도시 목록으로 고정할 수 있다.
 
 ## 구조
 
 ```
-index.html          화면 뼈대 · 설정 창
-css/style.css
-js/core.js          도구 · 인생 계산 · 느낌 문장 · 주제 등록/고르기
-js/themes/*.js      주제 하나에 파일 하나 (index.html 의 script 순서 = 낱말 겹칠 때 우선순위)
-js/app.js           설정 저장(localStorage) · 날씨 불러오기 · 그리기 고리
+www/                화면(앱에 그대로 들어간다)
+  index.html          뼈대 · 설정 창
+  css/style.css
+  js/core.js          도구 · 인생 계산 · 느낌 문장 · 주제 등록/고르기
+  js/cities.js        날씨 위치용 도시 목록
+  js/themes/*.js      주제 하나에 파일 하나 (index.html 의 script 순서 = 낱말 겹칠 때 우선순위)
+  js/app.js           설정 저장(localStorage) · 위치 · 날씨 불러오기 · 그리기 고리
+  fonts/              빌드 때 scripts/copy-fonts.mjs 가 채운다(저장소에 안 넣음)
+android/            Capacitor 안드로이드 프로젝트
+scripts/            make-apk.mjs · copy-fonts.mjs · make-icons.py
+store/              스토어용 아이콘(512) · 그래픽 이미지(1024x500)
+docs/               라이선스 검토
 ```
 
-새 주제는 `js/themes/` 에 `M.registerTheme({ id, name, story, keywords, create(env) { return { resize, draw, caption } } })` 꼴로 파일을 만들고 `index.html` 에 script 한 줄을 넣으면 된다. `draw(g, { t, dt, p, now })` 의 `p` 가 지나온 비율(0~1).
+새 주제는 `www/js/themes/` 에 `M.registerTheme({ id, name, story, keywords, create(env) { return { resize, draw, caption } } })` 꼴로 파일을 만들고 `index.html` 에 script 한 줄을 넣으면 된다. `draw(g, { t, dt, p, now })` 의 `p` 가 지나온 비율(0~1).

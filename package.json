@@ -1,0 +1,22 @@
+{
+  "name": "memento",
+  "private": true,
+  "version": "0.1.0",
+  "description": "남은 인생을 숫자 대신 느낌으로 보여 주는 앱 (안드로이드 · iOS 공통, Capacitor)",
+  "scripts": {
+    "fonts": "node scripts/copy-fonts.mjs",
+    "icons": "python scripts/make-icons.py",
+    "android:apk": "node scripts/make-apk.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/geolocation": "^8.2.4",
+    "@capacitor/ios": "^8.6.0",
+    "@fontsource/noto-serif-kr": "^5.3.1",
+    "pretendard": "^1.3.9"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0"
+  }
+}

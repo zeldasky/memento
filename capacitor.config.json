@@ -1,0 +1,19 @@
+{
+  "appId": "io.github.zeldasky.memento",
+  "appName": "인생",
+  "webDir": "www",
+  "android": {
+    "appendUserAgent": "Insaeng/0.1.0 (+https://github.com/zeldasky/memento)"
+  },
+  "ios": {
+    "appendUserAgent": "Insaeng/0.1.0 (+https://github.com/zeldasky/memento)",
+    "contentInset": "never"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK"
+    }
+  }
+}
