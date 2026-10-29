@@ -12,7 +12,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 못 해도 화면은 돈다 */ } },
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
-    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, newsOn: true }, store.get(KEY) || {});
+    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, saverStyle: 'mix', newsOn: true }, store.get(KEY) || {});
   // 주제 3개: [{ v: '삼성전자', icon: false }, …], 메인(그림으로 쓰는 주제)은 main 번째. 예전 저장값(theme 하나)은 한 칸으로 옮긴다
   if (!Array.isArray(st.topics) || !st.topics.length) {
     st.topics = [{ v: st.theme || '날씨', icon: st.themeMode === 'icon' || (st.theme || '').startsWith('@') }];
@@ -63,6 +63,7 @@
   const env = { seed: 0, text: '', weather: null, weatherStatus: 'idle', place: null };
   // 뉴스 이벤트: 표본 제목 → 감지 → 30초 장면(진짜 뉴스 출처가 생기면 표본 자리에 받은 제목이 들어간다)
   const ev = M.eventPlayer((Date.now() & 0xffff) + 7);
+  const saverPic = M.saverPlayer((Date.now() & 0xffff) + 3);
   let eventOn = false;
   function startEvent(sig) {
     const kind = Math.abs(sig.tone) < 0.2 ? 'notice' : sig.tone > 0 ? 'up' : 'down';
@@ -216,7 +217,17 @@
     const p = viewP(now);
     // 화면 보호기(번인 막기): 그림을 작게 줄여 둥근 창 안에만, 그 창이 몇 분에 걸쳐 화면 곳곳을 떠돈다. 나머지는 검게(OLED 픽셀 끔)
     sv += ((saverOn && !eventOn ? 1 : 0) - sv) * Math.min(1, dt * 1.2);
-    if (scene) {
+    // 보호기 그림: 나이를 암시하는 상징(나이테 · 10년 도형 · 별자리 · 달 · 시계)이 검은 화면을 떠돈다. 'theme' 이면 주제 그림을 작은 창으로
+    const symbol = (st.saverStyle || 'mix') !== 'theme';
+    if (scene && symbol) {
+      if (sv < 0.99) { g.save(); scene.draw(g, { t, dt, p, now: Date.now() }); g.restore(); }
+      if (sv > 0.01) {
+        g.fillStyle = `rgba(0,0,0,${sv})`; g.fillRect(0, 0, W, H);
+        g.save(); g.globalAlpha = sv;
+        saverPic.draw(g, W, H, t, dt, { p: realP(), age: ready() ? M.currentAge(st) : 40, lifespan: st.lifespan || 85 }, st.saverStyle || 'mix');
+        g.restore();
+      }
+    } else if (scene) {
       g.save();
       if (sv > 0.01) {
         const s = U.lerp(1, 0.42, sv), ox = Math.sin(t / 97) * W * 0.26 * sv, oy = Math.sin(t / 131 + 1.3) * H * 0.3 * sv;
@@ -564,6 +575,14 @@
       $('#fAge').value = ''; $('#fAge').placeholder = `생일 기준 ${a.toFixed(1)}세`;
     } else { $('#fAge').placeholder = '예: 47'; }
   }
+  // 보호기 그림 고르기(칩)
+  let pickedSaver = 'mix';
+  function syncSaverChips() { for (const b of $('#saverPicChips').children) b.classList.toggle('on', b.dataset.k === pickedSaver); }
+  for (const [k, label] of Object.entries(M.SAVER_NAMES)) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.k = k; b.textContent = label;
+    b.onclick = () => { pickedSaver = k; syncSaverChips(); };
+    $('#saverPicChips').append(b);
+  }
   // 밝기 막대는 움직이는 대로 숫자를 보여 준다(저장은 '보기'를 눌러야)
   function syncScreenForm() {
     $('#briOut').textContent = `${$('#fBright').value}%`;
@@ -598,6 +617,7 @@
     radio('keepOn', st.keepOn ? 'on' : 'off');
     radio('saver', String(st.saverMin));
     radio('saverOff', String(st.saverOffH));
+    pickedSaver = st.saverStyle || 'mix'; syncSaverChips();
     $('#fBright').value = st.bright; $('#fSaverBright').value = st.saverBright;
     syncScreenForm();
     $('#formError').textContent = '';
@@ -665,6 +685,7 @@
     st.keepOn = radioValue('keepOn') === 'on';
     st.saverMin = +(radioValue('saver') || 0);
     st.saverOffH = +(radioValue('saverOff') ?? 3);
+    st.saverStyle = pickedSaver;
     st.bright = +$('#fBright').value; st.saverBright = +$('#fSaverBright').value;
     applyScreen();
     save();
