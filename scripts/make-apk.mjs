@@ -54,14 +54,21 @@ if (!existsSync(localProps)) {
 // 3. 글꼴 → 4. 웹 자원 동기화 → 5. APK
 run('node', ['scripts/copy-fonts.mjs'])
 run('npx', ['cap', 'sync', 'android'])
-const out = join(ANDROID, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+
+// --release: 플레이 스토어용 AAB(업로드 키 서명). 없으면 시험 설치용 디버그 APK
+const RELEASE = process.argv.includes('--release')
+if (RELEASE && !existsSync(process.env.MEMENTO_KEYSTORE || 'C:/Users/zelda/keys/memento/keystore.properties'))
+  fail('업로드 키(keystore.properties)를 찾지 못했어요. MEMENTO_KEYSTORE 로 위치를 알려 주세요.')
+const out = RELEASE
+  ? join(ANDROID, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab')
+  : join(ANDROID, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
 rmSync(out, { force: true })
-run(win ? `"${join(ANDROID, 'gradlew.bat')}"` : './gradlew', ['assembleDebug', '--console=plain'], {
+run(win ? `"${join(ANDROID, 'gradlew.bat')}"` : './gradlew', [RELEASE ? 'bundleRelease' : 'assembleDebug', '--console=plain'], {
   cwd: ANDROID, env: { ...process.env, JAVA_HOME: jdk },
 })
-if (!existsSync(out)) fail('APK 가 만들어지지 않았어요.')
+if (!existsSync(out)) fail('빌드 결과가 만들어지지 않았어요.')
 
 mkdirSync(join(ROOT, 'release'), { recursive: true })
-const dest = join(ROOT, 'release', `memento-${version}.apk`)
+const dest = join(ROOT, 'release', `memento-${version}.${RELEASE ? 'aab' : 'apk'}`)
 copyFileSync(out, dest)
-console.log(`\nAPK: ${dest} (${(statSync(dest).size / 1024 / 1024).toFixed(1)}MB, 디버그 서명)`)
+console.log(`\n${RELEASE ? 'AAB' : 'APK'}: ${dest} (${(statSync(dest).size / 1024 / 1024).toFixed(1)}MB, ${RELEASE ? '업로드 키 서명 — 플레이 콘솔에 올리는 파일' : '디버그 서명'})`)

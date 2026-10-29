@@ -192,6 +192,7 @@
     const age = p * st.lifespan, s = M.sayMetaphor(meta, p, { age, lifespan: st.lifespan }, pk);
     setText('#clockLabel', s.label);
     setText('#clock', s.big);
+    $('#clockBox').dataset.len = s.big.length > 9 ? 'long' : s.big.length > 6 ? 'mid' : ''; // 긴 비유는 글씨를 줄여 한 줄에
     setText('#clockSuffix', s.suf || '');
     setText('#fraction', s.note || '');
     $('#lineDone').style.width = `${p * 100}%`;

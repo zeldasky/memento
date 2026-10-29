@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>메멘토 개인정보 처리방침</title>
+<style>
+  body { max-width: 720px; margin: 0 auto; padding: 32px 20px 60px; font: 16px/1.7 -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif; color: #1d1f24; background: #fff; }
+  h1 { font-size: 24px; } h2 { font-size: 17px; margin-top: 28px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; } th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+  .muted { color: #666; font-size: 14px; }
+  @media (prefers-color-scheme: dark) { body { background: #111318; color: #e9e7e2; } th, td { border-color: #333; } .muted { color: #999; } a { color: #f2c879; } }
+</style>
+</head>
+<body>
+<h1>메멘토 개인정보 처리방침</h1>
+<p class="muted">시행일 2026년 10월 29일 · 앱: 메멘토(io.github.zeldasky.memento)</p>
+
+<p>메멘토는 회원 가입이 없고, 광고 · 분석 도구를 쓰지 않으며, 개발자가 운영하는 서버로 개인정보를 보내지 않습니다.</p>
+
+<h2>1. 앱이 다루는 정보</h2>
+<table>
+  <tr><th>정보</th><th>쓰는 곳</th><th>어디에 남나</th></tr>
+  <tr><td>지금 나이 또는 생년월일, 살 것 같은 나이, 주제 낱말, 화면 설정</td><td>지나온 시간을 계산해 그림 · 문장으로 보여 줌</td><td>이 기기 안에만 저장. 밖으로 보내지 않음</td></tr>
+  <tr><td>대략적인 위치(선택, 약 100m 단위로 줄임)</td><td>"날씨" 주제를 고른 경우에만 동네 날씨를 받기 위해</td><td>아래 2항의 날씨 제공처로만 전송. 개발자는 받거나 저장하지 않음</td></tr>
+  <tr><td>도시 이름(위치 대신 고른 경우)</td><td>그 도시의 날씨를 받기 위해</td><td>기기 안에 저장, 좌표만 날씨 제공처로 전송</td></tr>
+</table>
+
+<h2>2. 제3자에게 가는 정보</h2>
+<p>날씨 주제를 쓰면 위도 · 경도(대략)가 노르웨이 기상청(MET Norway, api.met.no)으로 가고, 그 과정에서 기기의 IP 주소가 MET Norway 에 남을 수 있습니다. MET Norway 의 처리는 그 기관의 방침을 따릅니다. 날씨 주제를 쓰지 않으면 아무 정보도 밖으로 나가지 않습니다.</p>
+
+<h2>3. 권한</h2>
+<p>대략적인 위치(ACCESS_COARSE_LOCATION) 하나만 요청하며, 거절해도 날씨는 서울 기준이나 직접 고른 도시로 보여 줍니다. 정밀 위치 · 백그라운드 위치는 쓰지 않습니다.</p>
+
+<h2>4. 지우기</h2>
+<p>앱 설정에서 값을 바꾸거나, 기기의 앱 정보 → 저장공간 → 데이터 지우기, 또는 앱을 지우면 모두 사라집니다.</p>
+
+<h2>5. 아동</h2>
+<p>메멘토는 아동을 대상으로 하지 않으며, 아동의 개인정보를 일부러 모으지 않습니다.</p>
+
+<h2>6. 바뀔 때</h2>
+<p>처리방침이 바뀌면 이 페이지에 시행일과 함께 알립니다.</p>
+
+<h2>7. 문의</h2>
+<p><a href="https://github.com/zeldasky/memento/issues">github.com/zeldasky/memento/issues</a></p>
+</body>
+</html>
