@@ -1,7 +1,7 @@
 {
   "name": "memento",
   "private": true,
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "남은 인생을 숫자 대신 느낌으로 보여 주는 앱 (안드로이드 · iOS 공통, Capacitor)",
   "scripts": {
     "fonts": "node scripts/copy-fonts.mjs",
