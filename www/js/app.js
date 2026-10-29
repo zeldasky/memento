@@ -12,13 +12,24 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 못 해도 화면은 돈다 */ } },
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
-    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, newsOn: true }, store.get(KEY) || {});
+    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, newsOn: true }, store.get(KEY) || {});
   // 주제 3개: [{ v: '삼성전자', icon: false }, …], 메인(그림으로 쓰는 주제)은 main 번째. 예전 저장값(theme 하나)은 한 칸으로 옮긴다
   if (!Array.isArray(st.topics) || !st.topics.length) {
     st.topics = [{ v: st.theme || '날씨', icon: st.themeMode === 'icon' || (st.theme || '').startsWith('@') }];
     st.main = 0;
   }
-  const save = () => store.set(KEY, st);
+  // 시스템 화면 보호기(안드로이드 Dream)로 떴는가 — 앱과 저장소가 달라서 앱이 적어 둔 설정을 받아 쓴다
+  const DREAM = new URLSearchParams(location.search).get('dream') === '1';
+  if (DREAM && window.MementoNative) {
+    try { const saved = JSON.parse(window.MementoNative.settings() || '{}'); Object.assign(st, saved); } catch { /* 설정이 없으면 기본값 */ }
+    st.guideSeen = true;
+  }
+  // 저장: 웹 저장소 + (앱에서는) 안드로이드 저장소에도 — 시스템 화면 보호기가 같은 설정으로 그린다
+  const save = () => {
+    store.set(KEY, st);
+    const c = window.Capacitor, B = c && c.isNativePlatform && c.isNativePlatform() && c.Plugins.MementoBridge;
+    if (B) B.saveSettings({ json: JSON.stringify(st) }).catch(() => {});
+  };
   const ready = () => (st.birth || st.age != null) && st.lifespan > 0;
 
   // 시험용: ?t=초 로 그림 시계를 앞당겨 몇 분 뒤 모습을 바로 본다(주소는 아래에서 지워지므로 먼저 읽는다)
@@ -198,7 +209,9 @@
   }
 
   function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000) * slow;
+    // 화면 보호기 중에는 초당 15번만 그린다(천천히 움직여서 매끄럽고, 전력 · 열이 준다)
+    if (saverOn && !eventOn && sv > 0.98 && now - last < 1000 / 15) { requestAnimationFrame(frame); return; }
+    const dt = Math.min(0.1, (now - last) / 1000) * slow;
     last = now; t += dt;
     const p = viewP(now);
     // 화면 보호기(번인 막기): 그림을 작게 줄여 둥근 창 안에만, 그 창이 몇 분에 걸쳐 화면 곳곳을 떠돈다. 나머지는 검게(OLED 픽셀 끔)
@@ -216,6 +229,7 @@
         const r = Math.min(W, H) * U.lerp(1.2, 0.3, sv), mask = g.createRadialGradient(cx, cy, r * 0.55, cx, cy, r);
         mask.addColorStop(0, 'rgba(0,0,0,0)'); mask.addColorStop(1, `rgba(0,0,0,${sv})`);
         g.fillStyle = mask; g.fillRect(0, 0, W, H);
+        g.fillStyle = `rgba(0,0,0,${0.3 * sv})`; g.fillRect(0, 0, W, H);
         g.fillStyle = `rgba(0,0,0,${sv})`; // 둥근 창 바깥은 완전히 검게
         g.beginPath(); g.rect(0, 0, W, H); g.arc(cx, cy, r, 0, U.TAU, true); g.fill();
       }
@@ -369,18 +383,19 @@
     newsBusy = false;
     if (fired && !eventOn) startEvent(fired);
   }
-  setTimeout(pollNews, 5000);
+  if (!DREAM) setTimeout(pollNews, 5000); // 시스템 화면 보호기에서는 뉴스를 받지 않는다(앱 밖이라 — 나중에 서버가 생기면)
   setInterval(() => { if (Date.now() - newsLast > 20 * 60e3) pollNews(); }, 60e3);
 
   /* ── 화면: 켜 두기 · 밝기 · 화면 보호기 ── */
   // 앱에서는 플러그인(켜 두기 · 창 밝기 — 시스템 밝기 설정은 안 건드림), 브라우저에서는 검은 막으로 어둡게
   const plug = (name) => { const c = window.Capacitor; return c && c.isNativePlatform && c.isNativePlatform() ? c.Plugins[name] : null; };
-  let saverOn = false, lastTouch = Date.now();
+  let saverOn = false, lastTouch = Date.now(), saverSince = 0, saverDeep = false, saverSlept = false;
   function applyBrightness() {
-    const v = eventOn ? 1 : (saverOn ? Math.min(st.bright, st.saverBright) : st.bright) / 100;
+    const deep = saverOn && Date.now() - saverSince > 30 * 60e3 ? 0.5 : 1;          // 30분 넘으면 절반으로
+    const v = eventOn ? 1 : (saverOn ? Math.min(st.bright, st.saverBright) * deep : st.bright) / 100;
     const SB = plug('ScreenBrightness');
     if (SB) { SB.setBrightness({ brightness: st.bright >= 100 && !saverOn && !eventOn ? -1 : v }).catch(() => {}); $('#dim').style.opacity = 0; }
-    else $('#dim').style.opacity = String(Math.min(0.92, 1 - v));
+    else $('#dim').style.opacity = DREAM ? '0.3' : String(Math.min(0.92, 1 - v)); // 시스템 화면 보호기는 시스템이 어둡게 해 준다
   }
   function applyScreen() {
     const KA = plug('KeepAwake');
@@ -389,13 +404,22 @@
   }
   function setSaver(on) {
     if (saverOn === on) return;
-    saverOn = on;
+    saverOn = on; saverSince = Date.now(); saverDeep = false;
     document.body.classList.toggle('saver', on);
+    if (!on && saverSlept) { saverSlept = false; applyScreen(); } // 깨면 다시 켜 두기
     applyBrightness();
   }
   const touched = () => { lastTouch = Date.now(); };
   setInterval(() => {
     if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#guide').open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
+    if (!saverOn) return;
+    const on = Date.now() - saverSince;
+    if (!saverDeep && on > 30 * 60e3) { saverDeep = true; applyBrightness(); }
+    // 아주 오래 두면 "켜 두기"를 풀어 시스템이 화면을 끄게 한다(밤새 켜 두지 않게)
+    if (!saverSlept && st.saverOffH > 0 && on > st.saverOffH * 3600e3) {
+      saverSlept = true;
+      const KA = plug('KeepAwake'); if (KA) KA.allowSleep().catch(() => {});
+    }
   }, 2000);
 
   /* ── 손가락 ─────────────────────────── */
@@ -544,7 +568,7 @@
   function syncScreenForm() {
     $('#briOut').textContent = `${$('#fBright').value}%`;
     $('#saverBriOut').textContent = `${$('#fSaverBright').value}%`;
-    $('#saverSeg').style.opacity = radioValue('keepOn') === 'on' ? 1 : 0.45;
+    for (const id of ['#saverSeg', '#saverOffSeg']) $(id).style.opacity = radioValue('keepOn') === 'on' ? 1 : 0.45;
   }
   function syncPlace() { $('#cityBox').hidden = radioValue('placeMode') !== 'city'; }
 
@@ -573,6 +597,7 @@
     $('#newsBox').hidden = !provider && !M.SAMPLE_NEWS;
     radio('keepOn', st.keepOn ? 'on' : 'off');
     radio('saver', String(st.saverMin));
+    radio('saverOff', String(st.saverOffH));
     $('#fBright').value = st.bright; $('#fSaverBright').value = st.saverBright;
     syncScreenForm();
     $('#formError').textContent = '';
@@ -639,6 +664,7 @@
     st.newsOn = radioValue('newsOn') !== 'off';
     st.keepOn = radioValue('keepOn') === 'on';
     st.saverMin = +(radioValue('saver') || 0);
+    st.saverOffH = +(radioValue('saverOff') ?? 3);
     st.bright = +$('#fBright').value; st.saverBright = +$('#fSaverBright').value;
     applyScreen();
     save();
@@ -694,9 +720,10 @@
   applyNews();
   applyScreen();
   if (SAVER_NOW) setTimeout(() => setSaver(true), 1500);
+  if (DREAM) { setSaver(true); sv = 1; warp.start = -1e9; document.body.classList.remove('warping'); }
   updateWords();
   // 처음 설치: 가이드 → 「시작하기」 → 설정. 업데이트로 가이드를 처음 보는 사람에게도 한 번
-  if (!st.guideSeen) M.openGuide({ first: true, onDone: () => { st.guideSeen = true; save(); if (!ready()) openSettings(false); } });
+  if (DREAM) { /* 시스템 화면 보호기: 아무것도 묻지 않는다 */ } else if (!st.guideSeen) M.openGuide({ first: true, onDone: () => { st.guideSeen = true; save(); if (!ready()) openSettings(false); } });
   else if (!ready()) openSettings(false);
   setInterval(updateWords, 30e3);
   setInterval(nextRemain, 9e3);
