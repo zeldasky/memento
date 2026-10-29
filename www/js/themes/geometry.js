@@ -207,17 +207,7 @@
         resize(w, h) { W = w; H = h; },
         draw(g, { t, p }) {
           const cx = W / 2, cy = H * 0.6, R = Math.min(W * 0.4, H * 0.25);
-          let h1 = baseHue + (d(0, t, 140) - 0.5) * 70, h2 = h1 + 30 + d(1, t, 110) * 70;
-          // 뉴스 특이점: 좋은 소식이면 금빛으로 데워지고 숨 쉬듯 부푼다, 나쁜 소식이면 청회색으로 식고 오그라들며 떤다
-          const sg = env.sig || { level: 0, tone: 0 }, L = sg.level, good = sg.tone >= 0;
-          let Rs = R, jx = 0, jy = 0;
-          if (L > 0.01) {
-            const target = good ? 40 : 212;
-            const k = Math.min(1, L * 1.1);
-            h1 = U.lerp(h1, target, k); h2 = U.lerp(h2, good ? 18 : 195, k);
-            Rs = R * (good ? 1 + 0.07 * L * Math.sin(t * 2.4) + 0.04 * L : 1 - 0.1 * L);
-            if (!good) { jx = (Math.random() - 0.5) * 5 * L; jy = (Math.random() - 0.5) * 3 * L; }
-          }
+          const h1 = baseHue + (d(0, t, 140) - 0.5) * 70, h2 = h1 + 30 + d(1, t, 110) * 70;
           const bg = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.85);
           bg.addColorStop(0, U.hsl(h1, 38, 11)); bg.addColorStop(1, U.hsl(h1 + 20, 30, 3.5));
           g.fillStyle = bg; g.fillRect(0, 0, W, H);
@@ -230,8 +220,8 @@
           if (f > 0) layers.push([order[(idx + 1) % order.length], f]);
           for (const [name, a] of layers) {
             if (a <= 0.01) continue;
-            g.save(); g.translate(cx + jx, cy + jy);
-            const hp = fam[name](g, Rs, t, p, h1, h2, a);
+            g.save(); g.translate(cx, cy);
+            const hp = fam[name](g, R, t, p, h1, h2, a);
             if (hp) { // 진행 머리 — 그 무늬의 회전을 그대로 따른다
               U.glow(g, hp[0], hp[1], 20, U.hsl(h2, 90, 75, (0.55 + 0.15 * Math.sin(t * 2)) * a));
               g.fillStyle = `rgba(255,255,255,${a})`; U.dot(g, hp[0], hp[1], 3.5);

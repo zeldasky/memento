@@ -13,6 +13,11 @@
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
     keepOn: false, saverMin: 0, bright: 100, saverBright: 25 }, store.get(KEY) || {});
+  // 주제 3개: [{ v: '삼성전자', icon: false }, …], 메인(그림으로 쓰는 주제)은 main 번째. 예전 저장값(theme 하나)은 한 칸으로 옮긴다
+  if (!Array.isArray(st.topics) || !st.topics.length) {
+    st.topics = [{ v: st.theme || '날씨', icon: st.themeMode === 'icon' || (st.theme || '').startsWith('@') }];
+    st.main = 0;
+  }
   const save = () => store.set(KEY, st);
   const ready = () => (st.birth || st.age != null) && st.lifespan > 0;
 
@@ -21,6 +26,8 @@
   // 시험용: ?news=surprise|shock|normal 로 뉴스 특이점 그림을 바로 본다
   let newsPreview = new URLSearchParams(location.search).get('news') || 'normal';
   const SAVER_NOW = new URLSearchParams(location.search).get('saver') === '1'; // 시험용: 바로 화면 보호기로
+  // 시험용: ?scene=rocket 으로 장면을 고르고, ?et=12 로 장면 12초째부터
+  const FORCE_SCENE = new URLSearchParams(location.search).get('scene'), EVENT_AT = +(new URLSearchParams(location.search).get('et') || 0);
 
   // 주소로 미리 채우기: ?age=47&life=85&theme=바다&detail=1
   (function fromQuery() {
@@ -29,21 +36,43 @@
     if (q.has('age')) { st.age = +q.get('age'); st.ageSetAt = Date.now(); st.birth = ''; }
     if (q.has('birth')) st.birth = q.get('birth');
     if (q.has('life')) st.lifespan = +q.get('life');
-    if (q.has('theme')) st.theme = q.get('theme');
+    if (q.has('theme')) { st.theme = q.get('theme'); st.topics = [{ v: st.theme, icon: st.theme.startsWith('@') }]; st.main = 0; }
+    if (q.has('topics')) { // 시험용: ?topics=삼성전자,@rose,비트코인&main=1
+      st.topics = q.get('topics').split(',').slice(0, 3).map((v) => ({ v, icon: v.startsWith('@') }));
+      st.main = Math.min(st.topics.length - 1, +(q.get('main') || 0)); st.theme = st.topics[st.main].v;
+    }
     if (q.has('detail')) st.detail = q.get('detail') === '1';
+    st.guideSeen = q.get('guide') !== '1'; // 시험용 주소로 열면 가이드를 건너뛴다(?guide=1 이면 보여 줌)
     save();
     try { history.replaceState(null, '', location.pathname); } catch { /* file:// 에서 막혀도 그만 */ }
   })();
 
   /* ── 그리기 ─────────────────────────── */
   const cv = $('#scene'), g = cv.getContext('2d');
-  const env = { seed: 0, text: '', weather: null, weatherStatus: 'idle', place: null, sig: { level: 0, tone: 0 } };
-  const fx = M.signalFx(U.rng(7));
-  env.sig = fx.value;
-  // 뉴스 신호 켜기: 표본 제목 → 감지 → 효과(진짜 뉴스 출처가 생기면 표본 자리에 받은 제목이 들어간다)
+  const env = { seed: 0, text: '', weather: null, weatherStatus: 'idle', place: null };
+  // 뉴스 이벤트: 표본 제목 → 감지 → 30초 장면(진짜 뉴스 출처가 생기면 표본 자리에 받은 제목이 들어간다)
+  const ev = M.eventPlayer((Date.now() & 0xffff) + 7);
+  let eventOn = false;
+  function startEvent(sig) {
+    const kind = Math.abs(sig.tone) < 0.2 ? 'notice' : sig.tone > 0 ? 'up' : 'down';
+    ev.play(kind, sig.level, t - EVENT_AT, FORCE_SCENE);
+    eventOn = true;
+    document.body.classList.add('eventing');
+    applyBrightness();                                   // 장면 동안은 화면을 밝게
+  }
+  function endEvent() {
+    eventOn = false;
+    document.body.classList.remove('eventing');
+    applyBrightness();
+    enter(); shownP = -1;                                // 원래 화면 · 문장으로 돌아온다
+  }
   function applyNews() {
     const sample = M.SAMPLE_NEWS[newsPreview] || M.SAMPLE_NEWS.normal;
-    fx.set(M.detectSignal(M.themeIcon(st.theme) ? M.themeIcon(st.theme).label : st.theme || '주제', sample.titles, sample.baseline), t);
+    // 뉴스는 글자로 넣은 주제만 살핀다(아이콘 주제 · 기하 무늬 값은 뉴스 낱말이 아니다). 미리보기는 그 첫 주제 이름으로
+    const newsTopics = st.topics.filter((x) => !x.icon && x.v && !x.v.startsWith('@')).map((x) => x.v);
+    const label = newsTopics[0] || (M.themeIcon(st.theme) ? M.themeIcon(st.theme).label : st.theme || '주제');
+    const sig = newsPreview === 'normal' ? null : M.detectSignal(label, sample.titles, sample.baseline);
+    if (sig) startEvent(sig); else if (eventOn) ev.stop(t);
   }
   const slow = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.25 : 1;
   let W = 0, H = 0, scene = null, def = null;
@@ -56,6 +85,15 @@
     if (scene) scene.resize(W, H);
   }
 
+  // 위쪽 칩: 메인 주제(아이콘이면 아이콘 + 이름, 아니면 점 + 낱말) + 나머지 주제 수(+2)
+  function applyThemeChip() {
+    const text = (st.theme || '').trim() || '날씨', ic = M.themeIcon(text), dot = $('#themeChipIcon');
+    $('#themeName').textContent = ic ? ic.label : text;
+    dot.classList.toggle('has-icon', !!ic);
+    dot.innerHTML = ic ? M.iconSvg(ic.svg, 17) : '';
+    const more = st.topics.filter((x) => x.v).length - 1;
+    $('#themeMore').hidden = more < 1; $('#themeMore').textContent = `+${more}`;
+  }
   function applyTheme(fade) {
     const text = (st.theme || '').trim() || '날씨';
     const next = M.matchTheme(text);
@@ -63,11 +101,7 @@
       def = next; env.text = text; env.seed = U.hash(M.normalize(text));
       scene = def.create(env); scene.resize(W, H);
       startWarp();
-      // 위쪽 칩: 아이콘으로 고른 주제면 아이콘 + 이름, 아니면 점 + 낱말
-      const ic = M.themeIcon(text), dot = $('#themeChipIcon');
-      $('#themeName').textContent = ic ? ic.label : text;
-      dot.classList.toggle('has-icon', !!ic);
-      dot.innerHTML = ic ? M.iconSvg(ic.svg, 17) : '';
+      applyThemeChip();
       if (def.needs === 'weather') loadWeather();
       cv.style.opacity = 1;
     };
@@ -167,9 +201,8 @@
     const dt = Math.min(0.05, (now - last) / 1000) * slow;
     last = now; t += dt;
     const p = viewP(now);
-    fx.step(dt);
     if (scene) { g.save(); scene.draw(g, { t, dt, p, now: Date.now() }); g.restore(); }
-    fx.draw(g, W, H, t, dt, saverOn); // 화면 보호기에서는 낱말 없이 그림 변화만
+    if (eventOn && !ev.draw(g, W, H, t, dt)) endEvent();
     drawRipples(now);
     drawWarp(now);
     if (Math.abs(p - shownP) > 2e-5) { shownP = p; renderWords(p); }
@@ -233,7 +266,6 @@
       if (c) { env.weather = M.metNormalize(c.data); env.weatherStatus = 'ok'; } else env.weatherStatus = 'error';
     } finally {
       weatherBusy = false;
-      capAt = -1e9;
     }
   }
 
@@ -296,9 +328,9 @@
   const plug = (name) => { const c = window.Capacitor; return c && c.isNativePlatform && c.isNativePlatform() ? c.Plugins[name] : null; };
   let saverOn = false, lastTouch = Date.now();
   function applyBrightness() {
-    const v = (saverOn ? Math.min(st.bright, st.saverBright) : st.bright) / 100;
+    const v = eventOn ? 1 : (saverOn ? Math.min(st.bright, st.saverBright) : st.bright) / 100;
     const SB = plug('ScreenBrightness');
-    if (SB) { SB.setBrightness({ brightness: st.bright >= 100 && !saverOn ? -1 : v }).catch(() => {}); $('#dim').style.opacity = 0; }
+    if (SB) { SB.setBrightness({ brightness: st.bright >= 100 && !saverOn && !eventOn ? -1 : v }).catch(() => {}); $('#dim').style.opacity = 0; }
     else $('#dim').style.opacity = String(Math.min(0.92, 1 - v));
   }
   function applyScreen() {
@@ -314,7 +346,7 @@
   }
   const touched = () => { lastTouch = Date.now(); };
   setInterval(() => {
-    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
+    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#guide').open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
   }, 2000);
 
   /* ── 손가락 ─────────────────────────── */
@@ -323,7 +355,8 @@
   // 화면 보호기 중에는 첫 손길이 깨우기만 한다(물결 · 끌기 없음)
   addEventListener('pointerdown', (e) => {
     touched();
-    if (saverOn) { setSaver(false); e.stopPropagation(); e.preventDefault(); }
+    // 장면 · 화면 보호기 중 첫 손길은 끝내기 · 깨우기만
+    if (eventOn || saverOn) { if (eventOn) ev.stop(t); setSaver(false); e.stopPropagation(); e.preventDefault(); }
   }, true);
   addEventListener('keydown', touched, true);
   cv.addEventListener('pointerdown', (e) => {
@@ -366,10 +399,46 @@
   function radio(name, value) { const el = document.querySelector(`input[name="${name}"][value="${value}"]`); if (el) el.checked = true; }
   function radioValue(name) { const el = document.querySelector(`input[name=${name}]:checked`); return el ? el.value : null; }
 
-  // 주제: 글자로(아무 낱말) / 아이콘으로(목록에서 고르기)
-  let pickedIcon = M.THEME_ICONS[0];
+  // 주제 3칸 — 칸마다 글자로(아무 낱말) 또는 아이콘으로(목록에서 고르기). 동그라미 = 메인(그림으로 쓰는 주제).
+  // 칸을 누르면 그 칸을 고치는 중이 되고, 아래 [글자로 | 아이콘으로] · 낱말 칩 · 아이콘 목록이 그 칸에 적용된다
+  let slots = [], mainIdx = 0, editIdx = 0, pickedIcon = M.THEME_ICONS[0];
   const themeMode = () => radioValue('themeMode') || 'text';
-  const chosenTheme = () => (themeMode() === 'icon' ? pickedIcon.theme : $('#fTheme').value.trim() || '날씨');
+  const slotTheme = (s) => (s && s.v.trim()) || '';
+  const chosenTheme = () => slotTheme(slots[mainIdx]) || slots.map(slotTheme).find(Boolean) || '날씨';
+  const X_SVG = '<path d="M6 6l12 12M18 6L6 18"/>';
+  function renderTopicRows(focus) {
+    const box = $('#topicRows'); box.innerHTML = '';
+    slots.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = `topic-row${i === editIdx ? ' editing' : ''}`;
+      const pickL = document.createElement('label'); pickL.className = 'main-pick'; pickL.title = '그림으로 쓸 메인 주제';
+      pickL.innerHTML = `<input type="radio" name="mainTopic" value="${i}"${i === mainIdx ? ' checked' : ''}><span></span>`;
+      pickL.firstChild.onchange = () => { mainIdx = i; syncThemeHint(); };
+      row.append(pickL);
+      const ic = s.icon ? M.themeIcon(s.v) : null;
+      if (ic) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'topic-icon';
+        b.innerHTML = `${M.iconSvg(ic.svg, 20)}<span></span>`; b.lastChild.textContent = ic.label;
+        b.onclick = () => { editIdx = i; radio('themeMode', 'icon'); pickedIcon = ic; syncThemeMode(); };
+        row.append(b);
+      } else {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.className = 'topic-text'; inp.maxLength = 30; inp.autocomplete = 'off';
+        inp.value = s.v; inp.placeholder = ['주제 1 — 예: 날씨, 삼성전자', '주제 2 (선택)', '주제 3 (선택)'][i];
+        inp.setAttribute('aria-label', `주제 ${i + 1}`);
+        inp.onfocus = () => { if (editIdx !== i || themeMode() !== 'text') { editIdx = i; radio('themeMode', 'text'); markEditing(); syncThemeMode(true); } };
+        inp.oninput = () => { s.v = inp.value; syncThemeHint(); };
+        row.append(inp);
+        if (focus && i === editIdx) setTimeout(() => inp.focus(), 0);
+      }
+      const clr = document.createElement('button'); clr.type = 'button'; clr.className = 'clear'; clr.setAttribute('aria-label', `주제 ${i + 1} 지우기`);
+      clr.innerHTML = M.iconSvg(X_SVG, 16); clr.hidden = !s.v;
+      clr.onclick = () => { s.v = ''; s.icon = false; editIdx = i; radio('themeMode', 'text'); renderTopicRows(true); syncThemeMode(true); };
+      row.append(clr);
+      box.append(row);
+    });
+  }
+  const markEditing = () => [...$('#topicRows').children].forEach((r, i) => r.classList.toggle('editing', i === editIdx));
   function buildIconGrid() {
     const box = $('#themeIconBox');
     M.THEME_ICONS.forEach((ic, i) => {
@@ -381,26 +450,37 @@
       b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.id = ic.id;
       b.innerHTML = `${M.iconSvg(ic.svg, 26)}<span></span>`;
       b.lastChild.textContent = ic.label;
-      b.onclick = () => { pickedIcon = ic; syncThemeHint(); };
+      b.onclick = () => { pickedIcon = ic; slots[editIdx] = { v: ic.theme, icon: true }; renderTopicRows(); syncThemeHint(); };
       box.append(b);
     });
   }
-  function syncThemeMode() {
-    const icon = themeMode() === 'icon';
+  // keep: 칸 내용을 그대로 두고 보기만 바꾼다(입력칸에 막 들어왔을 때)
+  function syncThemeMode(keep) {
+    const icon = themeMode() === 'icon', s = slots[editIdx];
+    if (!keep && s) {
+      if (!icon && s.icon) { // 아이콘 → 글자: 기하 무늬 값('@rose')은 글자로 못 쓰니 비우고, 그림 이름(날씨 등)은 그대로
+        s.icon = false; s.v = s.v.startsWith('@') ? '' : s.v; renderTopicRows(true);
+      }
+    }
     $('#themeTextBox').hidden = icon; $('#themeIconBox').hidden = !icon;
     syncThemeHint();
   }
   function syncThemeHint() {
-    const text = chosenTheme();
+    const text = chosenTheme(), s = slots[editIdx];
     const d = M.matchTheme(text), ic = M.themeIcon(text);
     const look = ic ? `${ic.label} 그림` : d.id === 'geometry' ? `「${text}」에서 뽑은 ${d.describe(text)}` : `${d.name} 그림`;
-    for (const b of $('#themeIconBox').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.id === pickedIcon.id));
+    const editingIcon = s && s.icon ? s.v : null;
+    for (const b of $('#themeIconBox').querySelectorAll('button')) b.setAttribute('aria-checked', String(!!editingIcon && M.themeIcon(editingIcon) && b.dataset.id === M.themeIcon(editingIcon).id));
     $('#themeMatch').innerHTML = '';
     const b = document.createElement('b'); b.textContent = look;
     // 받침 있으면 '으로', 없거나 ㄹ 받침이면 '로'
     const jong = (look.charCodeAt(look.length - 1) - 0xac00) % 28;
-    $('#themeMatch').append('→ ', b, `${jong > 0 && jong !== 8 ? '으로' : '로'} 보여줘요. ${d.story}`);
-    for (const c of $('#themeChips').children) c.classList.toggle('on', c.textContent === text);
+    $('#themeMatch').append('메인 → ', b, `${jong > 0 && jong !== 8 ? '으로' : '로'} 보여줘요. ${d.story}`);
+    const news = slots.filter((x) => !x.icon && x.v.trim() && !x.v.startsWith('@')).map((x) => x.v.trim());
+    if (news.length) $('#themeMatch').append(document.createElement('br'), `뉴스 특이점(시험판)은 ${news.map((n) => `「${n}」`).join(' ')}을 살펴요.`);
+    const cur = s && !s.icon ? s.v.trim() : '';
+    for (const c of $('#themeChips').children) c.classList.toggle('on', c.textContent === cur);
+    for (const r of $('#topicRows').querySelectorAll('.clear')) r.hidden = !slots[+r.getAttribute('aria-label').match(/\d/)[0] - 1].v;
     $('#placeBox').hidden = d.needs !== 'weather';
   }
   function syncBirth() {
@@ -425,10 +505,11 @@
     $('#fLife').value = st.lifespan || '';
     $('#fBirth').value = st.birth || '';
     $('#birthBox').open = !!st.birth;
-    const ic = M.themeIcon(st.theme);
-    pickedIcon = ic || M.THEME_ICONS[0];
-    radio('themeMode', st.themeMode === 'icon' || (st.theme || '').startsWith('@') ? 'icon' : 'text');
-    $('#fTheme').value = (st.theme || '').startsWith('@') ? '' : st.theme || '';
+    slots = [0, 1, 2].map((i) => ({ v: (st.topics[i] && st.topics[i].v) || '', icon: !!(st.topics[i] && st.topics[i].icon && M.themeIcon(st.topics[i].v)) }));
+    mainIdx = Math.min(st.main || 0, 2); editIdx = mainIdx;
+    pickedIcon = M.themeIcon(slots[editIdx].v) || M.THEME_ICONS[0];
+    radio('themeMode', slots[editIdx].icon ? 'icon' : 'text');
+    renderTopicRows();
     pickedCity = st.place && st.place.source === 'city' ? st.place : null;
     radio('placeMode', pickedCity ? 'city' : 'geo');
     $('#fCity').value = pickedCity ? pickedCity.name : '';
@@ -445,7 +526,7 @@
     syncBirth(); syncThemeMode(); syncPlace();
     if (!dlg.open) dlg.showModal();
     if (!ready()) $('#fAge').focus();
-    else if (focusTheme && themeMode() === 'text') $('#fTheme').focus();
+    else if (focusTheme && themeMode() === 'text') { const inp = $('#topicRows').children[editIdx].querySelector('.topic-text'); if (inp) inp.focus(); }
   }
 
   function cityButtons(list) {
@@ -489,8 +570,13 @@
     }
     st.lifespan = life;
     const oldTheme = st.theme, oldPlace = JSON.stringify(st.place);
-    st.theme = chosenTheme();
-    st.themeMode = themeMode();
+    // 빈 칸은 빼고 저장. 메인 칸이 비었으면 첫 주제가 메인
+    const filled = slots.map((s, i) => ({ s, i })).filter((x) => x.s.v.trim());
+    if (!filled.length) return showError('주제를 하나 이상 넣어 주세요');
+    st.topics = filled.map((x) => ({ v: x.s.v.trim(), icon: x.s.icon }));
+    st.main = Math.max(0, filled.findIndex((x) => x.i === mainIdx));
+    st.theme = st.topics[st.main].v;
+    st.themeMode = st.topics[st.main].icon ? 'icon' : 'text';
     if (radioValue('placeMode') === 'city') { if (pickedCity) st.place = pickedCity; }
     else if (st.place && st.place.source === 'city') st.place = null;
     st.detail = radioValue('detail') === 'more';
@@ -503,7 +589,10 @@
     applyNews();
     dlg.close();
     if (st.theme !== oldTheme) applyTheme(true);
-    else if (def && def.needs === 'weather' && JSON.stringify(st.place) !== oldPlace) { env.weather = null; loadWeather(); }
+    else {
+      applyThemeChip();
+      if (def && def.needs === 'weather' && JSON.stringify(st.place) !== oldPlace) { env.weather = null; loadWeather(); }
+    }
     updateWords();
     return true;
   }
@@ -511,15 +600,14 @@
   /* ── 묶기 ───────────────────────────── */
   for (const s of SUGGEST) {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = s;
-    b.onclick = () => { $('#fTheme').value = s; syncThemeHint(); };
+    b.onclick = () => { slots[editIdx] = { v: s, icon: false }; renderTopicRows(); syncThemeHint(); };
     $('#themeChips').append(b);
   }
-  $('#fTheme').addEventListener('input', syncThemeHint);
   buildIconGrid();
   document.querySelectorAll('input[name=keepOn]').forEach((r) => r.addEventListener('change', syncScreenForm));
   $('#fBright').addEventListener('input', syncScreenForm);
   $('#fSaverBright').addEventListener('input', syncScreenForm);
-  document.querySelectorAll('input[name=themeMode]').forEach((r) => r.addEventListener('change', syncThemeMode));
+  document.querySelectorAll('input[name=themeMode]').forEach((r) => r.addEventListener('change', () => syncThemeMode(false)));
   $('#fBirth').addEventListener('input', syncBirth);
   document.querySelectorAll('input[name=placeMode]').forEach((r) => r.addEventListener('change', syncPlace));
   $('#fCity').addEventListener('input', searchCity);
@@ -528,6 +616,8 @@
   $('#cancelBtn').addEventListener('click', () => dlg.close());
   dlg.addEventListener('cancel', (e) => { if (!ready()) e.preventDefault(); });
   $('#openSettings').addEventListener('click', () => openSettings(false));
+  $('#openHelp').addEventListener('click', () => M.openGuide());
+  $('#helpAgain').addEventListener('click', (e) => { e.preventDefault(); M.openGuide(); });
   $('#themeChip').addEventListener('click', () => openSettings(true));
   $('#remain').addEventListener('click', nextRemain);
   $('#clockBox').addEventListener('click', nextMetaphor);
@@ -548,7 +638,9 @@
   applyScreen();
   if (SAVER_NOW) setTimeout(() => setSaver(true), 1500);
   updateWords();
-  if (!ready()) openSettings(false);
+  // 처음 설치: 가이드 → 「시작하기」 → 설정. 업데이트로 가이드를 처음 보는 사람에게도 한 번
+  if (!st.guideSeen) M.openGuide({ first: true, onDone: () => { st.guideSeen = true; save(); if (!ready()) openSettings(false); } });
+  else if (!ready()) openSettings(false);
   setInterval(updateWords, 30e3);
   setInterval(nextRemain, 9e3);
   setInterval(() => { if (def && def.needs === 'weather' && !document.hidden) loadWeather(); }, 30 * 60e3);

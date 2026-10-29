@@ -14,7 +14,13 @@
 
 <header class="top">
   <button id="themeChip" class="chip" type="button" aria-label="주제 바꾸기">
-    <span class="chip-dot" id="themeChipIcon"></span><span id="themeName">날씨</span>
+    <span class="chip-dot" id="themeChipIcon"></span><span id="themeName">날씨</span><span class="chip-more" id="themeMore" hidden></span>
+  </button>
+  <div class="top-right">
+  <button id="openHelp" class="icon-btn" type="button" aria-label="도움말">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9.5"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.3-2.6 4"/><circle cx="12" cy="17.6" r=".6" fill="currentColor"/>
+    </svg>
   </button>
   <button id="openSettings" class="icon-btn" type="button" aria-label="설정">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -22,6 +28,7 @@
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
     </svg>
   </button>
+  </div>
 </header>
 
 <main class="words" id="words" hidden>
@@ -36,6 +43,17 @@
   <div class="track"><div class="done" id="lineDone"></div><div class="dot" id="lineDot"><span id="dotLabel">지금</span></div></div>
   <div class="ends"><span id="endL">태어난 날</span><span id="endR">마지막 날</span></div>
 </footer>
+
+<dialog id="guide" class="guide">
+  <div class="guide-box">
+    <div class="guide-cards" id="guideCards"></div>
+    <div class="guide-dots" id="guideDots"></div>
+    <div class="actions">
+      <button type="button" class="ghost" id="guideSkip">건너뛰기</button>
+      <button type="button" class="primary" id="guideNext">다음</button>
+    </div>
+  </div>
+</dialog>
 
 <dialog id="settings">
   <form id="form" novalidate>
@@ -55,13 +73,13 @@
     </details>
 
     <fieldset>
-      <legend>주제</legend>
-      <div class="seg">
+      <legend>주제 <span class="legend-sub">3개까지 · 동그라미를 누른 주제가 그림이 돼요</span></legend>
+      <div id="topicRows" class="topic-rows"></div>
+      <div class="seg" id="topicModeSeg">
         <label><input type="radio" name="themeMode" value="text">글자로</label>
         <label><input type="radio" name="themeMode" value="icon">아이콘으로</label>
       </div>
       <div id="themeTextBox" class="theme-text">
-        <input id="fTheme" type="text" maxlength="30" placeholder="아무 낱말이나 — 날씨, 바다, 커피…" autocomplete="off" aria-label="주제 낱말">
         <div class="chips" id="themeChips"></div>
       </div>
       <div id="themeIconBox" class="icon-grid" role="radiogroup" aria-label="주제 아이콘" hidden></div>
@@ -98,7 +116,7 @@
       <label class="range">화면 보호기 밝기 <output id="saverBriOut"></output>
         <input id="fSaverBright" type="range" min="5" max="100" step="5">
       </label>
-      <p class="hint">화면 보호기: 손대지 않으면 글은 모두 지우고 그림만 어둡게 남겨요. 관심 주제에 특이 뉴스가 생기면 그림의 색과 움직임만 바뀌어요. 누르면 돌아와요.</p>
+      <p class="hint">화면 보호기: 손대지 않으면 글은 모두 지우고 그림만 어둡게 남겨요. 누르면 돌아와요. 관심 주제에 특이 뉴스가 생기면 화면이 밝아지며 30초 동안 글자 없는 장면(로켓 · 불꽃놀이 · 유성 · 폭풍 …)으로 알려요.</p>
     </fieldset>
 
     <fieldset>
@@ -108,7 +126,7 @@
         <label><input type="radio" name="newsPreview" value="surprise">좋은 소식</label>
         <label><input type="radio" name="newsPreview" value="shock">나쁜 소식</label>
       </div>
-      <p class="hint">진짜 뉴스는 아직 안 받아요. 시험용 기사 제목으로 그림이 어떻게 바뀌는지 봐요.</p>
+      <p class="hint">진짜 뉴스는 아직 안 받아요. 저장하면 시험용 기사 제목으로 30초짜리 장면을 바로 틀어요(글자는 안 나와요). 누르면 끝나요.</p>
     </fieldset>
 
     <fieldset>
@@ -120,7 +138,7 @@
     </fieldset>
 
     <p class="error" id="formError" role="alert"></p>
-    <p class="credit">날씨 자료: MET Norway (CC BY 4.0) · <a href="licenses.html">오픈소스 라이선스</a> · <a href="https://zeldasky.github.io/memento/privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a></p>
+    <p class="credit"><a href="#" id="helpAgain">도움말</a> · 날씨 자료: MET Norway (CC BY 4.0) · <a href="licenses.html">오픈소스 라이선스</a> · <a href="https://zeldasky.github.io/memento/privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a></p>
     <div class="actions">
       <button type="button" id="cancelBtn" class="ghost">닫기</button>
       <button type="submit" class="primary">보기</button>
@@ -133,6 +151,8 @@
 <script src="js/metaphors.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/signal.js"></script>
+<script src="js/events.js"></script>
+<script src="js/guide.js"></script>
 <!-- 주제 고르기는 아래 순서가 우선순위 -->
 <script src="js/themes/moon.js"></script>
 <script src="js/themes/space.js"></script>
