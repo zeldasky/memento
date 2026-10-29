@@ -13,6 +13,7 @@
     create(env) {
       const rng = U.rng(env.seed);
       let W = 0, H = 0, branches = [], leaves = [], falling = [], tips = [];
+      const gust = U.gusts(rng), d = U.drift(env.seed, 4);
 
       // 나무 모양은 주제 글자로 정해진다(같은 글자면 같은 나무)
       const rec = (parent, ang, len, depth) => {
@@ -39,10 +40,11 @@
       };
 
       return {
-        resize(w, h) { W = w; H = h; falling = Array.from({ length: 34 }, () => ({ wait: rng() * 6 })); },
+        resize(w, h) { W = w; H = h; falling = Array.from({ length: 48 }, () => ({ wait: rng() * 6 })); },
         draw(g, { t, dt, p }) {
           U.fillV(g, W, H, '#0c1311', '#1d2722');
-          const bx = W / 2, by = H * 0.9, L = Math.min(H * 0.14, W * 0.19), unit = L / 120;
+          const bx = W / 2, by = H * 0.85, L = Math.min(H * 0.13, W * 0.19), unit = L / 120;
+          const gu = gust(t), lean = (d(0, t, 90) - 0.5) * 0.03 + gu * 0.05;
           U.glow(g, bx, by, L * 2.2, 'rgba(255,240,210,.05)');
           g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 1;
           g.beginPath(); g.moveTo(W * 0.1, by + 0.5); g.lineTo(W * 0.9, by + 0.5); g.stroke();
@@ -50,7 +52,7 @@
           for (const b of branches) {
             const pa = b.parent;
             b.sx = pa ? pa.ex : bx; b.sy = pa ? pa.ey : by;
-            const sway = Math.sin(t * 0.6 + b.sw) * 0.006 * b.depth + Math.sin(t * 0.35) * 0.008 * b.depth;
+            const sway = Math.sin(t * (0.6 + gu * 1.4) + b.sw) * (0.006 + gu * 0.012) * b.depth + Math.sin(t * 0.35) * 0.008 * b.depth + lean * b.depth * 0.3;
             b.a = (pa ? pa.a : 0) + b.ang + sway;
             const l = b.len * L;
             b.ex = b.sx + Math.sin(b.a) * l; b.ey = b.sy - Math.cos(b.a) * l;
@@ -73,11 +75,11 @@
           }
 
           // 떨어지는 잎 — 인생이 깊을수록 많다
-          const active = Math.round(2 + p * 30);
+          const active = Math.min(falling.length, Math.round(2 + p * 30 + gu * 14));
           falling.forEach((f, i) => {
             if (i >= active) return;
             if (f.wait > 0) { f.wait -= dt; if (f.wait <= 0) spawn(f); return; }
-            f.y += f.vy * dt; f.x += Math.sin(t * 1.1 + f.ph) * 20 * dt; f.rot += f.vr * dt;
+            f.y += f.vy * dt; f.x += (Math.sin(t * 1.1 + f.ph) * 20 + gu * 70) * dt; f.rot += f.vr * (1 + gu * 2) * dt;
             if (f.y > by) { f.wait = rng() * 4; return; }
             g.save(); g.translate(f.x, f.y); g.rotate(f.rot);
             g.fillStyle = U.hsl(h + f.j, s, l, 0.8);

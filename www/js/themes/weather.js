@@ -89,6 +89,7 @@
       const rng = U.rng(env.seed);
       let W = 0, H = 0, drops = [], flakes = [], clouds = [], stars = [], fogs = [];
       let flash = 0, nextBolt = 2 + rng() * 4, bolt = null;
+      const gust = U.gusts(rng);
 
       return {
         resize(w, h) {
@@ -110,8 +111,8 @@
           const hour = new Date().getHours();
           const day = cur ? cur.day : hour >= 7 && hour < 19;
           const [top, bot] = SKY[kind][day ? 0 : 1];
-          const hy = H * 0.74;
-          const wind = cur ? cur.wind : 8;
+          const hy = H * 0.7;
+          const wind = (cur ? cur.wind : 8) * (1 + gust(t) * 1.5);
 
           U.fillV(g, W, H, top, bot, 0, hy);
           g.fillStyle = bot; g.fillRect(0, hy, W, H - hy);
@@ -190,7 +191,7 @@
           const dd = w && w.days;
           if (dd && dd.length > 1) {
             const n = Math.min(7, dd.length), x0 = W * 0.1, x1 = W * 0.9;
-            const gy = hy + (H - hy) * 0.42, span = (H - hy) * 0.15;
+            const gy = hy + 26 + (H - hy) * 0.12, span = (H - hy) * 0.1;
             const tmax = dd.slice(0, n).map((d) => d.tmax), lo = Math.min(...tmax), hi = Math.max(...tmax);
             const pts = tmax.map((tv, i) => [x0 + ((x1 - x0) * i) / (n - 1), gy - (hi === lo ? 0.5 : (tv - lo) / (hi - lo)) * span]);
             g.strokeStyle = 'rgba(255,255,255,.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
@@ -205,7 +206,7 @@
               g.strokeStyle = i === 0 ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.7)'; g.lineWidth = i === 0 ? 1.6 : 1.2;
               glyph(g, dd[i].kind, x, y - 12, 6.5);
               g.fillStyle = i === 0 ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.45)';
-              g.fillText(i === 0 ? '오늘' : '일월화수목금토'[new Date(dd[i].date + 'T00:00').getDay()], x, gy + span * 0.2 + 20);
+              g.fillText(i === 0 ? '오늘' : '일월화수목금토'[new Date(dd[i].date + 'T00:00').getDay()], x, gy + 18);
             }
           }
 

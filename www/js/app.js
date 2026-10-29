@@ -1,4 +1,4 @@
-/* 인생 — 화면 · 설정 · 위치 · 날씨 불러오기 · 그리기 고리 */
+/* 메멘토 — 화면 · 설정 · 위치 · 날씨 불러오기 · 그리기 고리 */
 (function () {
   'use strict';
   const M = window.M, U = M.util;
@@ -14,6 +14,9 @@
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false }, store.get(KEY) || {});
   const save = () => store.set(KEY, st);
   const ready = () => (st.birth || st.age != null) && st.lifespan > 0;
+
+  // 시험용: ?t=초 로 그림 시계를 앞당겨 몇 분 뒤 모습을 바로 본다(주소는 아래에서 지워지므로 먼저 읽는다)
+  const T_START = +(new URLSearchParams(location.search).get('t') || 0);
 
   // 주소로 미리 채우기: ?age=47&life=85&theme=바다&detail=1
   (function fromQuery() {
@@ -47,7 +50,8 @@
     const next = M.matchTheme(text);
     const swap = () => {
       def = next; env.text = text; env.seed = U.hash(M.normalize(text));
-      scene = def.create(env); scene.resize(W, H); capAt = -1e9;
+      scene = def.create(env); scene.resize(W, H);
+      replay(2200);
       $('#themeName').textContent = text;
       if (def.needs === 'weather') loadWeather();
       cv.style.opacity = 1;
@@ -55,17 +59,46 @@
     if (fade && scene) { cv.style.opacity = 0; setTimeout(swap, 450); } else swap();
   }
 
-  let last = performance.now(), t = 0, capAt = -1e9;
+  // 보여 줄 진행률 — 평소엔 진짜 값. 열 때는 태어남(0)에서 지금까지 달려오고(되감기),
+  // 화면을 좌우로 끄는 동안은 손가락 자리(타임머신), 놓으면 지금으로 되돌아온다
+  let last = performance.now(), t = T_START, shownP = -1, scrub = null;
+  const anim = { from: 0, start: -1e9, dur: 2600 };
+  const ease = (k) => 1 - (1 - k) ** 3;
+  const realP = () => (ready() ? M.progress(st) : 0.5);
+  function replay(dur, from = 0) { anim.from = from; anim.start = performance.now(); anim.dur = dur; }
+  function viewP(now) {
+    if (scrub) return scrub.p;
+    const k = (now - anim.start) / anim.dur;
+    return k >= 1 ? realP() : U.lerp(anim.from, realP(), ease(Math.max(0, k)));
+  }
+
+  // 누르면 퍼지는 물결
+  const ripples = [];
+  function drawRipples(now) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i], k = (now - r.start) / 1400;
+      if (k >= 1) { ripples.splice(i, 1); continue; }
+      for (let j = 0; j < 3; j++) {
+        const kk = k - j * 0.12;
+        if (kk <= 0) continue;
+        g.strokeStyle = `rgba(255,255,255,${0.5 * (1 - kk) ** 2})`; g.lineWidth = 1.4 - j * 0.3;
+        g.beginPath(); g.arc(r.x, r.y, 12 + ease(kk) * 130, 0, U.TAU); g.stroke();
+      }
+      for (const s of r.sparks) {
+        const d = ease(k) * s.v;
+        g.fillStyle = `rgba(255,245,220,${0.9 * (1 - k)})`;
+        U.dot(g, r.x + Math.cos(s.a) * d, r.y + Math.sin(s.a) * d, 1.6 * (1 - k) + 0.4);
+      }
+    }
+  }
+
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000) * slow;
     last = now; t += dt;
-    const f = { t, dt, p: ready() ? M.progress(st) : 0.5, now: Date.now() };
-    if (scene) { g.save(); scene.draw(g, f); g.restore(); }
-    if (now - capAt > 1000) {
-      capAt = now;
-      const c = scene && scene.caption ? scene.caption(f) : '';
-      if ($('#caption').textContent !== c) $('#caption').textContent = c;
-    }
+    const p = viewP(now);
+    if (scene) { g.save(); scene.draw(g, { t, dt, p, now: Date.now() }); g.restore(); }
+    drawRipples(now);
+    if (Math.abs(p - shownP) > 2e-5) { shownP = p; renderWords(p); }
     requestAnimationFrame(frame);
   }
 
@@ -131,24 +164,86 @@
   }
 
   /* ── 문장 ───────────────────────────── */
-  let remainItems = [], remainIdx = 0;
+  // 세션: 앱을 열 때 · 화면을 껐다 다시 볼 때마다 새 씨앗 → 다른 비유(마라톤 · KTX · 24절기 …), 다른 표현, 다른 그림 시각
+  const MKEY = 'memento.metaphors';
+  let remainItems = [], remainIdx = 0, sessionSeed = 1, pk = U.picker(1), meta = 0;
+  // 최근에 본 비유는 피해서 고른다
+  function pickMetaphor(rnd) {
+    const n = M.METAPHORS.length, seen = store.get(MKEY) || [];
+    const fresh = [...Array(n).keys()].filter((i) => !seen.includes(i));
+    const pool = fresh.length ? fresh : [...Array(n).keys()];
+    const i = pool[Math.floor(rnd() * pool.length)];
+    store.set(MKEY, [...seen.filter((x) => x !== i), i].slice(-Math.floor(n * 0.6)));
+    return i;
+  }
+  function enter() { const w = $('#words'); w.classList.remove('enter'); void w.offsetWidth; w.classList.add('enter'); }
+  function newSession() {
+    sessionSeed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+    const rnd = U.rng(sessionSeed);
+    pk = U.picker(sessionSeed); remainIdx = 0;
+    meta = pickMetaphor(rnd);
+    t += 600 + rnd() * 3000;           // 그림 시계를 건너뛰어 열 때마다 다른 무늬 · 하늘 · 바다 상태로
+    replay(2600); enter(); shownP = -1;
+  }
+  // 비유 문장 + 아래 인생 줄 — p 가 움직이는 동안(되감기 · 끌기) 매 프레임 따라 바뀐다
+  const setText = (sel, v) => { const el = $(sel); if (el.textContent !== v) el.textContent = v; };
+  function renderWords(p) {
+    if (!ready()) return;
+    const age = p * st.lifespan, s = M.sayMetaphor(meta, p, { age, lifespan: st.lifespan }, pk);
+    setText('#clockLabel', s.label);
+    setText('#clock', s.big);
+    setText('#clockSuffix', s.suf || '');
+    setText('#fraction', s.note || '');
+    $('#lineDone').style.width = `${p * 100}%`;
+    $('#lineDot').style.left = `${p * 100}%`;
+    setText('#dotLabel', scrub ? `${Math.round(age)}세` : st.detail ? `${M.currentAge(st).toFixed(1)}세` : '지금');
+  }
   function updateWords() {
     if (!ready()) return;
-    const now = Date.now(), age = M.currentAge(st, now), p = U.clamp(age / st.lifespan, 0, 1);
+    const now = Date.now(), age = M.currentAge(st, now);
     $('#words').hidden = false; $('#lifeline').hidden = false;
-    $('#clock').textContent = M.clockPhrase(p);
-    $('#fraction').textContent = M.fractionPhrase(p);
-    $('#season').textContent = `계절로는 ${M.seasonPhrase(p)}`;
-    remainItems = M.remainingThings(st.lifespan - age);
+    remainItems = M.remainingThings(st.lifespan - age, pk, U.rng(sessionSeed)); // 세션 안에서는 순서가 그대로
     $('#remain').textContent = remainItems[remainIdx % remainItems.length];
     $('#detail').hidden = !st.detail;
     if (st.detail) $('#detail').textContent = M.detailLine(st, now);
-    $('#lineDone').style.width = `${p * 100}%`;
-    $('#lineDot').style.left = `${p * 100}%`;
-    $('#dotLabel').textContent = st.detail ? `${age.toFixed(1)}세` : '지금';
     $('#endL').textContent = st.detail ? '0세' : '태어난 날';
     $('#endR').textContent = st.detail ? `${st.lifespan}세` : '마지막 날';
+    shownP = -1;
   }
+  // 큰 글씨를 누르면 다른 비유로
+  function nextMetaphor() {
+    meta = pickMetaphor(Math.random);
+    replay(1400, Math.max(0, realP() - 0.25)); enter(); shownP = -1;
+  }
+
+  /* ── 손가락 ─────────────────────────── */
+  // 누르기: 물결 · 좌우로 끌기: 그 나이의 나(타임머신), 놓으면 지금으로 돌아온다
+  let down = null;
+  cv.addEventListener('pointerdown', (e) => {
+    down = { x: e.clientX, y: e.clientY, t: performance.now() };
+    try { cv.setPointerCapture(e.pointerId); } catch { /* 무시 */ }
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!down || !ready()) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    if (!scrub && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) { scrub = { p: viewP(performance.now()) }; document.body.classList.add('scrubbing'); }
+    if (scrub) scrub.p = U.clamp((e.clientX - 20) / Math.max(1, W - 40), 0, 1);
+  });
+  const release = (e) => {
+    if (!down) return;
+    if (scrub) {
+      const from = scrub.p;
+      scrub = null; document.body.classList.remove('scrubbing');
+      replay(1100, from);
+    } else if (e.type === 'pointerup' && performance.now() - down.t < 450) {
+      const r = { x: e.clientX, y: e.clientY, start: performance.now(), sparks: [] };
+      for (let i = 0; i < 14; i++) r.sparks.push({ a: Math.random() * U.TAU, v: 30 + Math.random() * 70 });
+      ripples.push(r);
+    }
+    down = null;
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', release);
   function nextRemain() {
     if (remainItems.length < 2) return;
     const el = $('#remain');
@@ -276,15 +371,20 @@
   $('#openSettings').addEventListener('click', () => openSettings(false));
   $('#themeChip').addEventListener('click', () => openSettings(true));
   $('#remain').addEventListener('click', nextRemain);
+  $('#clockBox').addEventListener('click', nextMetaphor);
   addEventListener('resize', resize);
+  // 화면을 껐다 켜거나(잠금) 다른 앱에 다녀오면 새 세션 — 2초 넘게 가려졌을 때만
+  let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (Date.now() - hiddenAt > 2000) newSession();
     updateWords();
     if (def && def.needs === 'weather') loadWeather();
   });
 
   resize();
   applyTheme(false);
+  newSession();
   updateWords();
   if (!ready()) openSettings(false);
   setInterval(updateWords, 30e3);

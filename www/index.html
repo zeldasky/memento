@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f17">
-<title>인생</title>
+<title>메멘토</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -24,12 +24,11 @@
 </header>
 
 <main class="words" id="words" hidden>
-  <p class="label">인생을 하루로 치면</p>
-  <h1 class="clock"><span id="clock"></span><small>무렵</small></h1>
-  <p class="fraction"><span id="fraction"></span> <span class="season" id="season"></span></p>
+  <p class="label" id="clockLabel">인생을 하루로 치면</p>
+  <h1 class="clock" id="clockBox" title="눌러서 다른 비유 보기"><span id="clock"></span><small id="clockSuffix">무렵</small></h1>
+  <p class="fraction" id="fraction"></p>
   <button class="remain" id="remain" type="button" title="눌러서 다른 것 보기"></button>
   <p class="detail" id="detail" hidden></p>
-  <p class="caption" id="caption"></p>
 </main>
 
 <footer class="lifeline" id="lifeline" hidden>
@@ -91,6 +90,7 @@
 
 <script src="js/core.js"></script>
 <script src="js/cities.js"></script>
+<script src="js/metaphors.js"></script>
 <!-- 주제 고르기는 아래 순서가 우선순위 -->
 <script src="js/themes/moon.js"></script>
 <script src="js/themes/space.js"></script>

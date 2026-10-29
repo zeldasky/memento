@@ -2,15 +2,15 @@
 (function () {
   'use strict';
   const M = window.M, U = M.util, TAU = U.TAU;
-  const MINE = 3, TILT = -0.18;
+  const MINE = 3;
 
   M.registerTheme({
     id: 'space', name: '우주',
     story: '밝게 빛나는 궤도가 내 궤도예요. 한 바퀴가 한 인생이에요.',
     keywords: ['우주', '별', '별빛', '밤하늘', '은하', '은하수', '행성', '궤도', '태양계', 'space', 'star', 'galaxy', 'planet', 'universe', 'cosmos'],
     create(env) {
-      const rng = U.rng(env.seed), hue = 190 + rng() * 90;
-      let W = 0, H = 0, stars = [], orbits = [], nebula = [];
+      const rng = U.rng(env.seed), hue = 190 + rng() * 90, d = U.drift(env.seed, 6), meteors = U.meteors(rng);
+      let W = 0, H = 0, stars = [], orbits = [], nebula = [], TILT = -0.18;
       const at = (o, cx, cy, R, a) => {
         const rx = R * o.f, ry = rx * 0.36, x = Math.cos(a) * rx, y = Math.sin(a) * ry;
         return [cx + x * Math.cos(TILT) - y * Math.sin(TILT), cy + x * Math.sin(TILT) + y * Math.cos(TILT)];
@@ -31,12 +31,15 @@
           orbits = [0.13, 0.2, 0.28, 0.37, 0.46].map((f) => ({ f, ph: rng() * TAU, sz: 1.6 + rng() * 2.8, hue: hue + (rng() - 0.5) * 80 }));
           nebula = Array.from({ length: 4 }, () => ({ x: rng(), y: 0.3 + rng() * 0.6, r: 0.25 + rng() * 0.3, h: hue + (rng() - 0.5) * 60 }));
         },
-        draw(g, { t, p }) {
+        draw(g, { t, dt, p }) {
+          // 몇 분에 걸쳐 궤도가 기울고, 성운 빛이 번지고 옮겨 간다
+          TILT = -0.18 + (d(0, t, 140) - 0.5) * 0.3;
           U.fillV(g, W, H, '#03040a', '#0b1020');
-          for (const n of nebula) U.glow(g, n.x * W, n.y * H, n.r * Math.max(W, H), U.hsl(n.h, 60, 45, 0.07));
+          nebula.forEach((n, i) => U.glow(g, (n.x + (d(1 + (i % 3), t, 200) - 0.5) * 0.2) * W, n.y * H, n.r * Math.max(W, H) * (0.8 + d(4, t, 90) * 0.5), U.hsl(n.h + (d(5, t, 160) - 0.5) * 60, 60, 45, 0.05 + 0.05 * d(2 + (i % 2), t, 70))));
           U.drawStars(g, stars, W, H, t, 0.9);
+          meteors.draw(g, W, H * 0.5, t, dt);
 
-          const cx = W / 2, cy = H * 0.64, R = Math.min(W, H * 1.6);
+          const cx = W / 2, cy = H * 0.6, R = Math.min(W, H * 1.6);
           U.glow(g, cx, cy, R * 0.1, 'rgba(255,214,150,.55)');
           g.fillStyle = '#ffe9c4'; U.dot(g, cx, cy, Math.max(4, R * 0.012));
 

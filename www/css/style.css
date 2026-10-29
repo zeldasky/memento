@@ -20,7 +20,7 @@ html, body {
 button { font: inherit; color: inherit; cursor: pointer; }
 [hidden] { display: none !important; }
 
-#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .45s ease; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .45s ease; touch-action: none; }
 
 /* 위 띠 */
 .top {
@@ -58,10 +58,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: clamp(36px, 9vw, 76px); letter-spacing: -.01em;
 }
 .clock small { font-size: .38em; margin-left: .35em; color: var(--ink-dim); }
-.fraction { margin: 12px 0 0; font-size: clamp(15px, 3.9vw, 19px); line-height: 1.5; }
+.fraction { margin: 12px 0 0; word-break: keep-all; font-size: clamp(15px, 3.9vw, 19px); line-height: 1.5; }
 .fraction span { display: inline-block; }
-.season { color: var(--ink-dim); }
-.season::before { content: '· '; }
 .remain {
   pointer-events: auto; margin-top: 12px; padding: 6px 12px;
   background: none; border: 0; border-radius: 999px;
@@ -70,19 +68,33 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .remain:hover { background: rgba(255, 255, 255, .07); }
 .detail { margin: 4px 0 0; font-size: 13px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-.caption { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-faint); }
+.clock { pointer-events: auto; cursor: pointer; display: inline-block; padding: 0 6px; -webkit-user-select: none; user-select: none; }
+
+/* 열 때 · 비유를 바꿀 때 한 줄씩 떠오른다 */
+.words.enter > * { animation: rise .9s cubic-bezier(.2, .7, .2, 1) both; }
+.words.enter > :nth-child(2) { animation-delay: .12s; }
+.words.enter > :nth-child(3) { animation-delay: .5s; }
+.words.enter > :nth-child(4) { animation-delay: .9s; }
+.words.enter > :nth-child(5) { animation-delay: 1.1s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* 끄는 동안(타임머신): 글씨가 살짝 밝아지고 인생 줄의 점이 커진다 */
+body.scrubbing .clock { text-shadow: 0 0 24px rgba(255, 230, 180, .55), 0 1px 18px rgba(0, 0, 0, .55); }
+body.scrubbing .dot { transform: scale(1.5); }
+body.scrubbing .dot span { color: var(--ink); font-size: 12px; }
 
 /* 아래 인생 줄 */
 .lifeline {
   position: fixed; z-index: 1; left: 20px; right: 20px; max-width: 720px; margin-inline: auto;
   bottom: calc(var(--safe-bottom) + 20px);
+  pointer-events: none;
 }
 .track { position: relative; height: 2px; background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .3) 0 3px, transparent 3px 8px); }
-.done { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(255, 255, 255, .25), rgba(255, 255, 255, .92)); transition: width 1.2s ease; }
+.done { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, rgba(255, 255, 255, .25), rgba(255, 255, 255, .92)); }
 .dot {
   position: absolute; top: 50%; left: 0; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%;
   background: #fff; box-shadow: 0 0 0 4px rgba(255, 255, 255, .14), 0 0 16px rgba(255, 255, 255, .7);
-  transition: left 1.2s ease;
+  transition: transform .2s ease;
 }
 .dot span { position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); font-size: 11px; white-space: nowrap; color: var(--ink-dim); }
 .ends { display: flex; justify-content: space-between; margin-top: 9px; font-size: 11px; color: var(--ink-faint); }
@@ -139,5 +151,6 @@ legend { padding: 0; margin-bottom: 8px; font-size: 13px; color: var(--ink-dim);
 .primary:hover { filter: brightness(1.06); }
 
 @media (prefers-reduced-motion: reduce) {
-  #scene, .done, .dot, .remain { transition: none; }
+  #scene, .dot, .remain { transition: none; }
+  .words.enter > * { animation: none; }
 }

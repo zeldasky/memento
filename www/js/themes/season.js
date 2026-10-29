@@ -14,13 +14,14 @@
     create(env) {
       const rng = U.rng(env.seed);
       let W = 0, H = 0, parts = [];
+      const gust = U.gusts(rng), d = U.drift(env.seed, 4);
       const spawn = (o, top) => Object.assign(o, {
         x: rng() * W, y: top ? -10 : rng() * H, v: 0.5 + rng(), ph: rng() * TAU, rot: rng() * TAU, vr: (rng() - 0.5) * 2, s: 0.6 + rng() * 0.8, j: rng() - 0.5,
       });
       return {
         resize(w, h) { W = w; H = h; parts = Array.from({ length: 90 }, () => spawn({}, false)); },
         draw(g, { t, dt, p, now }) {
-          const today = new Date(now), s = seasonOf(today);
+          const today = new Date(now), s = seasonOf(today), gu = gust(t), wind = (d(0, t, 80) - 0.5) * 30 + gu * 90;
           U.fillV(g, W, H, BG[s][0], BG[s][1]);
 
           for (const o of parts) {
@@ -33,7 +34,8 @@
               continue;
             }
             o.y += (s === 0 ? 22 : s === 2 ? 30 : 28) * o.v * dt;
-            o.x += (Math.sin(t * 0.9 + o.ph) * (s === 2 ? 26 : 16) + (s === 0 ? 8 : 0)) * dt;
+            o.x += (Math.sin(t * 0.9 + o.ph) * (s === 2 ? 26 : 16) + (s === 0 ? 8 : 0) + wind) * dt;
+            if (o.x > W + 20) o.x = -20; else if (o.x < -20) o.x = W + 20;
             o.rot += o.vr * dt * (s === 2 ? 1.5 : 1);
             if (o.y > H + 10) spawn(o, true);
             if (s === 3) { g.fillStyle = 'rgba(255,255,255,.8)'; U.dot(g, o.x, o.y, 1 + o.s * 1.3); continue; }
@@ -49,7 +51,7 @@
           }
 
           // 인생의 사계절 바퀴 — 맨 위가 태어남, 시계 방향
-          const cx = W / 2, cy = H * 0.64, r = Math.min(W * 0.33, H * 0.21), gap = 0.05, ap = -Math.PI / 2 + TAU * p;
+          const cx = W / 2, cy = H * 0.6, r = Math.min(W * 0.33, H * 0.2), gap = 0.05, ap = -Math.PI / 2 + TAU * p;
           for (let q = 0; q < 4; q++) {
             const a0 = -Math.PI / 2 + (q * Math.PI) / 2 + gap, a1 = -Math.PI / 2 + ((q + 1) * Math.PI) / 2 - gap;
             const [h, sa, l] = COL[q];

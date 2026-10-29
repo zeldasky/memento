@@ -9,11 +9,12 @@
     keywords: ['바다', '파도', '물결', '해변', '항해', '호수', '강물', '물', 'sea', 'ocean', 'wave', 'beach'],
     create(env) {
       const rng = U.rng(env.seed);
-      let W = 0, H = 0, stars = [];
+      const dr = U.drift(env.seed, 6), meteors = U.meteors(rng);
+      let W = 0, H = 0, stars = [], sea = 1;
       const N = 30, ROW = Math.round(N * 0.38);
       const row = (i, x, t, hy) => {
         const d = i / (N - 1), depth = d ** 1.8;
-        const y0 = hy + (H - hy) * depth, amp = (1 + 18 * depth * depth) * (H / 900);
+        const y0 = hy + (H - hy) * depth, amp = (1 + 18 * depth * depth) * (H / 900) * sea;
         const k = 0.018 / (0.3 + depth * 1.6), sp = 0.5 + depth * 0.9;
         return y0 + Math.sin(x * k + t * sp + i * 1.7) * amp + Math.sin(x * k * 2.1 - t * sp * 0.7 + i * 0.6) * amp * 0.4;
       };
@@ -24,11 +25,15 @@
       };
       return {
         resize(w, h) { W = w; H = h; stars = U.makeStars(rng, 140); },
-        draw(g, { t, p }) {
+        draw(g, { t, dt, p }) {
           const hy = H * 0.46;
-          U.fillV(g, W, H, '#050a17', '#1d3557', 0, hy);
+          // 몇 분 단위로 잔잔했다가 너울이 일었다가, 하늘빛도 남색 ↔ 보랏빛으로 옮겨 간다
+          sea = 0.55 + dr(0, t, 150) * 1.2;
+          const sky = dr(1, t, 200);
+          U.fillV(g, W, H, U.hsl(222 + sky * 30, 60, 5), U.hsl(212 + sky * 50, 45, 22 + sky * 6), 0, hy);
           g.fillStyle = '#06111f'; g.fillRect(0, hy, W, H - hy);
           U.drawStars(g, stars, W, hy * 0.85, t, 0.6);
+          meteors.draw(g, W, hy * 0.8, t, dt);
 
           const mx = W * 0.8, my = hy - Math.min(H * 0.09, 70), mr = Math.min(W, H) * 0.028;
           U.glow(g, mx, my, mr * 6, 'rgba(240,232,210,.18)');

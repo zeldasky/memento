@@ -39,18 +39,21 @@
     keywords: ['달', '보름달', '달빛', '초승달', '반달', '그믐달', 'moon', 'lunar'],
     create(env) {
       const rng = U.rng(env.seed);
-      let W = 0, H = 0, stars = [], maria = [];
+      const d = U.drift(env.seed, 6), meteors = U.meteors(rng);
+      let W = 0, H = 0, stars = [], maria = [], wisps = [];
       return {
         resize(w, h) {
           W = w; H = h;
           stars = U.makeStars(rng, 240);
           maria = Array.from({ length: 9 }, () => ({ a: rng() * TAU, d: rng() * 0.7, r: 0.08 + rng() * 0.2, o: 0.05 + rng() * 0.09 }));
+          wisps = Array.from({ length: 4 }, () => ({ y: 0.45 + rng() * 0.35, w: 0.5 + rng() * 0.6, h: 0.02 + rng() * 0.03, v: 6 + rng() * 10, x: rng() }));
         },
-        draw(g, { t, p, now }) {
+        draw(g, { t, dt, p, now }) {
           U.fillV(g, W, H, '#04060c', '#131a2b');
           U.drawStars(g, stars, W, H, t, 0.8);
+          meteors.draw(g, W, H * 0.45, t, dt);
           const ph = M.moonPhase(now);
-          const cx = W / 2, cy = H * 0.63, r = Math.min(W * 0.25, H * 0.16);
+          const cx = W / 2, cy = H * 0.6, r = Math.min(W * 0.25, H * 0.16);
           U.glow(g, cx, cy, r * 3.2, `rgba(215,222,255,${0.05 + 0.16 * ph.illum})`);
           drawMoon(g, cx, cy, r, ph.f, maria);
 
@@ -65,6 +68,14 @@
             g.strokeStyle = `rgba(255,255,255,${i % 3 ? 0.2 : 0.4})`; g.lineWidth = 1;
             g.beginPath(); g.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
             g.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer); g.stroke();
+          }
+          // 얇은 구름 띠가 가끔 달 앞을 지나간다 — 짙기는 몇 분 단위로 오르내린다
+          const thick = Math.max(0, d(0, t, 120) - 0.45) * 1.8;
+          for (const w of wisps) {
+            const span = W * (1 + w.w), x = ((w.x * span + t * w.v) % span) - W * w.w, y = w.y * H, hh = w.h * H;
+            const gr = g.createLinearGradient(0, y - hh, 0, y + hh);
+            gr.addColorStop(0, 'rgba(160,170,200,0)'); gr.addColorStop(0.5, `rgba(160,170,200,${0.16 * thick})`); gr.addColorStop(1, 'rgba(160,170,200,0)');
+            g.fillStyle = gr; g.beginPath(); g.ellipse(x + (W * w.w) / 2, y, (W * w.w) / 2, hh, 0, 0, TAU); g.fill();
           }
           const hx = cx + Math.cos(a1) * rr, hy = cy + Math.sin(a1) * rr;
           U.glow(g, hx, hy, 18, `rgba(255,240,200,${0.45 + 0.15 * Math.sin(t * 2)})`);

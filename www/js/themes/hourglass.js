@@ -31,7 +31,7 @@
           }
           g.globalAlpha = 1;
 
-          const cx = W / 2, cy = H * 0.65, Ht = Math.min(H * 0.48, W * 0.95), hb = Ht / 2, hw = Math.min(Ht * 0.3, W * 0.36);
+          const cx = W / 2, cy = H * 0.6, Ht = Math.min(H * 0.44, W * 0.95), hb = Ht / 2, hw = Math.min(Ht * 0.3, W * 0.36);
           const q = Math.sqrt(1 - p), hs = hb * q;
           const sand = g.createLinearGradient(0, cy - hb, 0, cy + hb);
           sand.addColorStop(0, '#e9c98f'); sand.addColorStop(1, '#b98a4f');

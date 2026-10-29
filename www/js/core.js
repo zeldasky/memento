@@ -1,4 +1,4 @@
-/* 인생 — 공용 도구 · 인생 계산 · 느낌 문장 · 주제 등록 */
+/* 메멘토 — 공용 도구 · 인생 계산 · 느낌 문장 · 주제 등록 */
 (function () {
   'use strict';
   const M = (window.M = window.M || {});
@@ -60,6 +60,59 @@
     return kf[kf.length - 1][1];
   };
 
+  /* ── 되풀이되지 않는 움직임 ──────────────── */
+  // 부드러운 1차원 잡음(대략 0~1). 옥타브 셋의 주기가 서로 나뉘지 않아 몇 시간을 봐도 같은 꼴이 돌아오지 않는다
+  U.noise = (seed) => {
+    const r = U.rng(seed), N = 512, v = Float32Array.from({ length: N }, () => r());
+    const at = (x) => {
+      const i = Math.floor(x), f = x - i, s = f * f * (3 - 2 * f);
+      const a = v[((i % N) + N) % N], b = v[(((i + 1) % N) + N) % N];
+      return a + (b - a) * s;
+    };
+    return (x) => at(x) * 0.58 + at(x * 2.137 + 17.3) * 0.28 + at(x * 4.711 + 41.9) * 0.14;
+  };
+  // 천천히 흐르는 값 여러 개: d(i, t, 초) → 0~1, 초가 클수록 느리다
+  U.drift = (seed, n = 8) => {
+    const fs = Array.from({ length: n }, (_, i) => U.noise((seed + i * 7919) >>> 0));
+    return (i, t, sec = 60) => fs[i % n](t / sec);
+  };
+  // 가끔 일어나는 일 — 다음 시각을 [lo, hi] 초 사이에서 무작위로 정한다
+  U.every = (rng, lo, hi) => {
+    let next = lo + rng() * (hi - lo);
+    return (t) => { if (t < next) return false; next = t + lo + rng() * (hi - lo); return true; };
+  };
+  // 별똥별 — 하늘 아래 경계 yMax(픽셀)까지
+  U.meteors = (rng) => {
+    const list = [], due = U.every(rng, 14, 55);
+    return {
+      draw(g, W, yMax, t, dt) {
+        if (due(t)) list.push({ x: W * (0.1 + rng() * 0.8), y: yMax * (0.05 + rng() * 0.4), a: Math.PI * (0.15 + rng() * 0.2) * (rng() < 0.5 ? 1 : -1) + Math.PI / 2, v: 380 + rng() * 260, life: 0, max: 0.7 + rng() * 0.7 });
+        for (let i = list.length - 1; i >= 0; i--) {
+          const m = list[i];
+          m.life += dt;
+          if (m.life > m.max) { list.splice(i, 1); continue; }
+          const k = m.life / m.max, fade = Math.sin(Math.PI * k);
+          const hx = m.x + Math.cos(m.a) * m.v * m.life, hy = m.y + Math.sin(m.a) * m.v * m.life;
+          if (hy > yMax) continue;
+          const tl = 70 * fade, gr = g.createLinearGradient(hx, hy, hx - Math.cos(m.a) * tl, hy - Math.sin(m.a) * tl);
+          gr.addColorStop(0, `rgba(255,255,255,${0.9 * fade})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.strokeStyle = gr; g.lineWidth = 1.3; g.beginPath(); g.moveTo(hx, hy);
+          g.lineTo(hx - Math.cos(m.a) * tl, hy - Math.sin(m.a) * tl); g.stroke();
+        }
+      },
+    };
+  };
+  // 바람 — 가끔 30~90초마다 몇 초 동안 세게 분다. 0(잔잔) ~ 1(돌풍)
+  U.gusts = (rng) => {
+    const due = U.every(rng, 30, 90);
+    let start = -1e9, len = 6;
+    return (t) => {
+      if (due(t)) { start = t; len = 5 + rng() * 6; }
+      const k = (t - start) / len;
+      return k < 0 || k > 1 ? 0 : Math.sin(Math.PI * k) ** 2;
+    };
+  };
+
   /* ── 인생 계산 ─────────────────────────── */
   const YEAR = 365.2425 * 864e5;
   M.currentAge = (st, now = Date.now()) => {
@@ -72,6 +125,27 @@
   M.progress = (st, now) => U.clamp(M.currentAge(st, now) / st.lifespan, 0, 1);
 
   /* ── 느낌 문장 ─────────────────────────── */
+  // 같은 뜻을 여러 표현으로 — 화면을 다시 열 때마다(세션) 하나를 고른다. pk(목록) 은 세션 씨앗으로 고르는 함수
+  const first = (list) => list[0];
+  U.picker = (seed) => {
+    const memo = new Map();
+    return (list) => {
+      const key = list.join('|');
+      if (!memo.has(key)) memo.set(key, U.hash(`${seed}:${key}`) % list.length);
+      return list[memo.get(key)];
+    };
+  };
+  // 받침 따라 조사: josa('절반', '을', '를') → '절반을'
+  const josa = (w, a, b) => {
+    const c = w.charCodeAt(w.length - 1);
+    if (c >= 0xac00 && c <= 0xd7a3) return w + ((c - 0xac00) % 28 ? a : b);
+    return w + (/[136780]$/.test(w) ? a : b); // 숫자로 끝나면 읽는 소리로(일·삼·육·칠·팔·영 → 받침)
+  };
+  M.josa = josa;
+
+  M.CLOCK_LABELS = ['인생을 하루로 치면', '삶을 하루에 빗대면', '한평생을 하루로 접으면', '인생이 하루라면', '스물네 시간짜리 인생이라면', '내 삶의 시계는 지금'];
+  M.CLOCK_SUFFIX = ['무렵', '즈음', '쯤', '언저리'];
+
   // 인생을 하루로 치면 지금 몇 시쯤인가 (10분 단위로 뭉갠다)
   M.clockPhrase = (p) => {
     let min = Math.round((p * 1440) / 10) * 10;
@@ -85,22 +159,24 @@
 
   const SEASONS = ['이른 봄', '봄', '늦봄', '초여름', '한여름', '늦여름', '초가을', '가을', '늦가을', '초겨울', '한겨울', '겨울 끝자락'];
   M.seasonPhrase = (p) => SEASONS[Math.min(11, Math.floor(p * 12))];
+  M.seasonLine = (p, pk = first) => {
+    const s = SEASONS[Math.min(11, Math.floor(p * 12))];
+    return pk([`계절로는 ${s}`, `인생의 ${s}`, `삶의 계절은 ${s}`, `${josa(s, '에', '에')} 서 있어요`]);
+  };
 
-  // [값, 이름, 조사]
-  const FR = [
-    [1 / 5, '5분의 1', '을'], [1 / 4, '4분의 1', '을'], [1 / 3, '3분의 1', '을'], [2 / 5, '5분의 2', '를'],
-    [1 / 2, '절반', '을'], [3 / 5, '5분의 3', '을'], [2 / 3, '3분의 2', '를'], [3 / 4, '4분의 3', '을'],
-    [4 / 5, '5분의 4', '를'], [9 / 10, '10분의 9', '를'],
-  ];
-  M.fractionPhrase = (p) => {
-    if (p >= 1) return '기대한 나이를 넘어섰어요. 이제부터는 덤이에요';
-    if (p < 0.12) return '이제 막 길을 나섰어요';
-    if (p > 0.95) return '거의 끝자락에 와 있어요';
+  // [값, 이름]
+  const FR = [[1 / 5, '5분의 1'], [1 / 4, '4분의 1'], [1 / 3, '3분의 1'], [2 / 5, '5분의 2'], [1 / 2, '절반'],
+    [3 / 5, '5분의 3'], [2 / 3, '3분의 2'], [3 / 4, '4분의 3'], [4 / 5, '5분의 4'], [9 / 10, '10분의 9']];
+  M.fractionPhrase = (p, pk = first) => {
+    if (p >= 1) return pk(['기대한 나이를 넘어섰어요. 이제부터는 덤이에요', '계획보다 오래 걷고 있어요. 하루하루가 선물이에요', '지도 밖을 걷고 있어요. 모든 날이 덤이에요']);
+    if (p < 0.12) return pk(['이제 막 길을 나섰어요', '아직 아침 이슬이 마르지 않았어요', '길은 이제 시작이에요']);
+    if (p > 0.95) return pk(['거의 끝자락에 와 있어요', '마지막 장을 넘기는 중이에요', '해가 지평선에 닿았어요']);
     let best = FR[0];
     for (const f of FR) if (Math.abs(f[0] - p) < Math.abs(best[0] - p)) best = f;
-    const d = p - best[0];
-    if (Math.abs(d) < 0.012) return `딱 ${best[1]}쯤 왔어요`;
-    return d > 0 ? `${best[1]}${best[2]} 조금 넘게 지나왔어요` : `${best[1]}에 조금 못 미치게 왔어요`;
+    const d = p - best[0], x = best[1];
+    if (Math.abs(d) < 0.012) return pk([`딱 ${x}쯤 왔어요`, `꼭 ${x} 지점에 서 있어요`, `${x} 지점을 지나는 중이에요`]);
+    if (d > 0) return pk([`${josa(x, '을', '를')} 조금 넘게 지나왔어요`, `${josa(x, '을', '를')} 막 넘어섰어요`, `${josa(x, '을', '를')} 지나 조금 더 걸어왔어요`, `${josa(x, '을', '를')} 살짝 넘긴 자리예요`]);
+    return pk([`${josa(x, '에', '에')} 조금 못 미치게 왔어요`, `${josa(x, '을', '를')} 눈앞에 두고 있어요`, `곧 ${josa(x, '이', '가')} 돼요`, `${x}까지 얼마 남지 않았어요`]);
   };
 
   // 숫자를 "느낌"으로: 두 자리만 남기고 만·천 단위로 읽는다
@@ -113,16 +189,25 @@
     const man = Math.floor(r / 10000), rest = r % 10000;
     return `${man}만${rest ? ` ${rest / 1000}천` : ''}`;
   };
-  M.remainingThings = (yearsLeft) => {
-    if (yearsLeft <= 0) return ['오늘 하루가 통째로 선물이에요'];
-    const y = yearsLeft;
-    return [
-      `앞으로 맞을 여름, 약 ${feel(y)}번`,
-      `앞으로 볼 보름달, 약 ${feel(y * 12.37)}번`,
-      `남은 주말, 약 ${feel(y * 52.18)}번`,
-      `남은 아침, 약 ${feel(y * 365.24)}번`,
-      `첫눈 오는 날, 약 ${feel(y)}번`,
-    ];
+  // 남은 것들 — 항목마다 표현 몇 개, 세션마다 순서와 표현이 바뀐다
+  M.feel = feel;
+  M.remainingThings = (yearsLeft, pk = first, rnd = Math.random) => {
+    if (yearsLeft <= 0) return [pk(['오늘 하루가 통째로 선물이에요', '오늘이 가장 귀한 날이에요'])];
+    const y = yearsLeft, n = (k) => feel(y * k);
+    const items = [
+      [`앞으로 맞을 여름, 약 ${n(1)}번`, `남은 여름, 약 ${n(1)}번`, `수박 먹을 여름이 약 ${n(1)}번`],
+      [`앞으로 볼 보름달, 약 ${n(12.37)}번`, `보름달이 약 ${n(12.37)}번 더 떠요`],
+      [`남은 주말, 약 ${n(52.18)}번`, `늦잠 잘 토요일, 약 ${n(52.18)}번`],
+      [`남은 아침, 약 ${n(365.24)}번`, `눈 뜰 아침이 약 ${n(365.24)}번`],
+      [`첫눈 오는 날, 약 ${n(1)}번`, `첫눈을 약 ${n(1)}번 더 맞아요`],
+      [`벚꽃 필 봄, 약 ${n(1)}번`, `꽃구경 갈 봄, 약 ${n(1)}번`],
+      [`단풍 드는 가을, 약 ${n(1)}번`],
+      [`남은 생일, 약 ${n(1)}번`, `생일 케이크 촛불, 약 ${n(1)}번 더`],
+      [`계절이 약 ${n(4)}번 더 바뀌어요`],
+      [`남은 금요일 저녁, 약 ${n(52.18)}번`],
+    ].map(pk);
+    for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+    return items;
   };
 
   M.detailLine = (st, now) => {
