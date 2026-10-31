@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
     namespace = "io.github.zeldasky.memento"
@@ -7,8 +8,8 @@ android {
         applicationId "io.github.zeldasky.memento"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1000
-        versionName "0.10.0"
+        versionCode 1802
+        versionName "0.18.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -30,6 +31,8 @@ android {
             }
         }
     }
+    // 폰 안 AI 의 네이티브 라이브러리(시험판에만 있다)
+    packaging { jniLibs.useLegacyPackaging = true }
     buildTypes {
         release {
             minifyEnabled false
@@ -52,6 +55,9 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion" // 시스템 화면 보호기(MementoDream)가 앱 화면 파일을 읽는 데
     implementation project(':capacitor-android')
+    // 폰 안 AI — 시험판에만(src/debug). 출시판에는 라이브러리도 플러그인도 들어가지 않는다
+    debugImplementation 'com.qualcomm.qti:geniex-android:0.10.0'
+    debugImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

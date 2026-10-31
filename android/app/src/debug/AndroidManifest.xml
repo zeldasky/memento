@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 시험판에만: 폰 안 AI(GenieX)는 안드로이드 8.1 이상이라 합칠 때만 낮은 minSdk 를 허용한다(지원 칩 검사는 플러그인이 한다) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-sdk tools:overrideLibrary="com.geniex.sdk" />
+    <application android:extractNativeLibs="true" />
+</manifest>

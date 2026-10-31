@@ -12,7 +12,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 저장 못 해도 화면은 돈다 */ } },
   };
   const st = Object.assign({ age: null, ageSetAt: Date.now(), birth: '', lifespan: 85, theme: '날씨', place: null, detail: false,
-    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, saverStyle: 'mix', newsOn: true }, store.get(KEY) || {});
+    keepOn: false, saverMin: 0, bright: 100, saverBright: 25, saverOffH: 3, saverStyle: 'mix', newsOn: true, savedDays: 1 }, store.get(KEY) || {});
   // 시스템 화면 보호기(안드로이드 Dream)로 떴는가 — 앱과 저장소가 달라서 앱이 적어 둔 설정을 받아 쓴다
   const DREAM = new URLSearchParams(location.search).get('dream') === '1';
   if (DREAM && window.MementoNative) {
@@ -69,10 +69,15 @@
   const ev = M.eventPlayer((Date.now() & 0xffff) + 7);
   const saverPic = M.saverPlayer((Date.now() & 0xffff) + 3);
   let eventOn = false;
+  // 대화 중에 큰 뉴스가 오면 대화를 닫은 뒤에 보여 준다
+  let heldEvent = null;
+  M.onAiChatClose = () => { touched(); if (heldEvent) { const s = heldEvent; heldEvent = null; startEvent(s); } };
   function startEvent(sig) {
+    if (M.aiChatOpen()) { heldEvent = sig; return; }
     const kind = Math.abs(sig.tone) < 0.2 ? 'notice' : sig.tone > 0 ? 'up' : 'down';
     ev.play(kind, sig.level, t - EVENT_AT, FORCE_SCENE);
     eventOn = true;
+    goPage(0); hideFloats(true);
     document.body.classList.add('eventing');
     applyBrightness();                                   // 장면 동안은 화면을 밝게
   }
@@ -134,60 +139,95 @@
     return k >= 1 ? realP() : U.lerp(anim.from, realP(), ease(Math.max(0, k)));
   }
 
-  // 「와」 넘어가기 — 앱을 열거나 주제를 바꾸면: 화면이 어두워지고, 빛줄기가 점점 빨라지며 쏟아지는 동안
-  // 가운데 나이가 0세에서 지금까지 오르고, 하얀 섬광과 함께 지금의 그림이 드러나며 글이 떠오른다.
-  // 중간 과정의 그림 · 글은 보여 주지 않는다(전에는 그림 · 비유가 태어남부터 정신없이 바뀌었다)
-  const warp = { start: -1e9, dur: 2600, flashed: true, streaks: [] };
+  // 「와」 넘어가기 — 앱을 열거나 배경을 바꾸면: 화면이 어두워지고 빛줄기가 쏟아지는 동안 나이가 0세에서 지금까지 오르고,
+  // 빛이 잦아들며 살아온 시간을 다른 숫자(며칠째 · 심장 박동 · 먹은 밥 …)로 한 번 더 굴린 뒤, 섬광과 함께 지금의 그림이 드러난다.
+  // 누르면 바로 섬광으로 건너뛴다
+  const SKEY = 'memento.stats';
+  const warp = { start: -1e9, flashAt: 5.75, flashed: true, stat: null, phase: 0, last: 0, streaks: [] };
   for (let i = 0; i < 170; i++) warp.streaks.push({ a: Math.random() * U.TAU, r: Math.random(), v: 0.5 + Math.random(), w: 0.6 + Math.random() * 1.6, h: 28 + Math.random() * 30 });
   const easeIO = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
-  function startWarp(dur = 2600) {
+  const warpSkippable = (now) => { const el = (now - warp.start) / 1000; return !warp.flashed && el >= 0 && el < warp.flashAt - 0.15; };
+  // 최근에 본 숫자는 피해서 고른다
+  function pickStat() {
+    const all = M.lifeStats(M.currentAge(st), st.lifespan, !!st.birth), seen = store.get(SKEY) || [];
+    const pool = all.map((_, i) => i).filter((i) => !seen.includes(i)), from = pool.length ? pool : all.map((_, i) => i);
+    const i = from[Math.floor(Math.random() * from.length)];
+    store.set(SKEY, [...seen.filter((x) => x !== i), i].slice(-Math.floor(all.length * 0.6)));
+    return all[i];
+  }
+  function startWarp() {
     if (slow < 1) { enter(); return; }            // 움직임 줄이기 설정이면 건너뛴다
-    warp.start = performance.now(); warp.dur = dur; warp.flashed = false;
+    warp.start = performance.now(); warp.last = warp.start; warp.flashed = false;
+    warp.flashAt = ready() ? 5.75 : 1.9;        // 둘째 숫자가 약 3.7초 보이도록(2.05초부터 섬광까지)
+    warp.stat = ready() ? pickStat() : null;
     document.body.classList.add('warping');
   }
+  // 긴 글자는 폭에 맞춰 줄여서 쓴다
+  function fitText(text, x, y, size, maxW, weight, family) {
+    g.font = `${weight} ${size}px ${family}`;
+    const w = g.measureText(text).width;
+    if (w > maxW) g.font = `${weight} ${size * (maxW / w)}px ${family}`;
+    g.fillText(text, x, y);
+  }
   function drawWarp(now) {
-    const k = (now - warp.start) / warp.dur;
-    if (k < 0 || k >= 1) return;
-    const cx = W / 2, cy = H * 0.5, maxR = Math.hypot(W, H) * 0.62;
+    const el = (now - warp.start) / 1000, F = warp.flashAt;
+    const dtw = Math.min(0.1, (now - warp.last) / 1000); warp.last = now;
+    // 프레임이 끊겨 섬광 순간을 건너뛰어도 글은 반드시 띄운다
+    if (!warp.flashed && el >= F) { warp.flashed = true; document.body.classList.remove('warping'); enter(); shownP = -1; }
+    if (el < 0 || el >= F + 0.8) return;
+    const cx = W / 2, cy = H * 0.5, maxR = Math.hypot(W, H) * 0.62, serif = '"Noto Serif KR", serif', sans = 'Pretendard, sans-serif';
     // 어둠: 빨리 덮고, 섬광 뒤에 걷힌다
-    const dark = k < 0.1 ? k / 0.1 : k < 0.8 ? 1 : Math.max(0, 1 - (k - 0.8) / 0.2);
+    const dark = el < 0.26 ? el / 0.26 : el < F + 0.1 ? 1 : Math.max(0, 1 - (el - F - 0.1) / 0.7);
     g.fillStyle = `rgba(2,3,9,${0.95 * dark})`; g.fillRect(0, 0, W, H);
-    // 빛줄기: 가운데서 바깥으로, 점점 빨라지고 길어진다
-    if (k > 0.04 && k < 0.84) {
-      const u = U.clamp((k - 0.04) / 0.72, 0, 1), speed = u * u, fade = k > 0.74 ? 1 - (k - 0.74) / 0.1 : Math.min(1, u * 4);
-      const sec = now / 1000;
+    // 빛줄기: 점점 빨라졌다가, 두 번째 숫자 동안 잦아들고, 섬광 직전에 다시 쏟아진다
+    const rise = U.clamp((el - 0.1) / 1.8, 0, 1), calm = warp.stat ? U.clamp((el - 1.9) / 0.5, 0, 1) : 0, burst = warp.stat ? U.clamp((el - F + 0.6) / 0.6, 0, 1) : 0;
+    const speed = Math.max(rise * rise * (1 - calm * 0.9), burst);
+    warp.phase += dtw * (0.15 + speed * 2.6);
+    const fade = Math.min(1, el * 4) * (el > F - 0.05 ? Math.max(0, 1 - (el - F + 0.05) / 0.25) : 1) * (1 - 0.55 * calm * (1 - burst));
+    if (fade > 0) {
       g.lineCap = 'round';
       for (const s of warp.streaks) {
-        const r0 = (s.r + sec * s.v * (0.15 + speed * 2.6)) % 1, rr = r0 * r0 * maxR, len = (6 + speed * 170 * s.v) * (0.25 + r0);
+        const r0 = (s.r + warp.phase * s.v) % 1, rr = r0 * r0 * maxR, len = (6 + speed * 170 * s.v) * (0.25 + r0);
         g.strokeStyle = U.hsl(s.h, 90, 80 + 15 * r0, (0.15 + 0.85 * r0) * fade);
         g.lineWidth = s.w * (0.5 + r0);
         g.beginPath(); g.moveTo(cx + Math.cos(s.a) * rr, cy + Math.sin(s.a) * rr);
         g.lineTo(cx + Math.cos(s.a) * (rr + len), cy + Math.sin(s.a) * (rr + len)); g.stroke();
       }
     }
-    // 가운데 빛과 나이 숫자
-    if (k < 0.8 && ready()) {
-      const u = easeIO(U.clamp((k - 0.08) / 0.62, 0, 1)), a = Math.min(1, k / 0.15) * (k > 0.72 ? 1 - (k - 0.72) / 0.08 : 1);
+    g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
+    // 첫째: 나이 0세 → 지금
+    if (ready() && el < 2.25) {
+      const u = easeIO(U.clamp((el - 0.2) / 1.5, 0, 1)), a = Math.min(1, el / 0.4) * (el > 1.95 ? Math.max(0, 1 - (el - 1.95) / 0.3) : 1);
       U.glow(g, cx, cy, 60 + u * 140, `rgba(255,214,150,${0.35 * a})`);
-      const age = Math.round(u * M.currentAge(st));
-      g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
       g.shadowColor = 'rgba(255,220,160,.9)'; g.shadowBlur = 28;
       g.fillStyle = `rgba(255,248,232,${a})`;
       const fs = Math.min(W * 0.32, 150);
-      g.font = `300 ${fs}px "Noto Serif KR", serif`;
-      g.fillText(String(age), cx, cy);
-      g.shadowBlur = 0; g.font = `400 ${fs * 0.16}px Pretendard, sans-serif`;
+      g.font = `300 ${fs}px ${serif}`;
+      g.fillText(String(Math.round(u * M.currentAge(st))), cx, cy);
+      g.shadowBlur = 0; g.font = `400 ${fs * 0.16}px ${sans}`;
       g.fillStyle = `rgba(255,240,215,${0.75 * a})`;
       g.fillText(u < 0.98 ? '태어난 날부터' : '지금, 여기', cx, cy + fs * 0.62);
-      g.restore();
     }
+    // 둘째: 살아온 시간을 다른 숫자로
+    if (warp.stat && el > 2.05 && el < F + 0.1) {
+      const a = Math.min(1, (el - 2.05) / 0.35) * (el > F - 0.15 ? Math.max(0, 1 - (el - F + 0.15) / 0.25) : 1);
+      const u = 1 - (1 - U.clamp((el - 2.15) / 1.05, 0, 1)) ** 3, s = warp.stat, fs = Math.min(W * 0.135, 62);
+      U.glow(g, cx, cy, 200, `rgba(255,214,150,${0.2 * a})`);
+      g.fillStyle = `rgba(255,240,215,${0.8 * a})`;
+      fitText(s.top, cx, cy - fs * 1.15, fs * 0.33, W * 0.86, 400, sans);
+      g.shadowColor = 'rgba(255,220,160,.9)'; g.shadowBlur = 22;
+      g.fillStyle = `rgba(255,248,232,${a})`;
+      fitText(s.fmt(s.value * u), cx, cy, fs, W * 0.9, 300, serif);
+      g.shadowBlur = 0; g.fillStyle = `rgba(255,240,215,${0.7 * a * U.clamp((el - 2.9) / 0.3, 0, 1)})`;
+      fitText(s.sub, cx, cy + fs * 1.1, fs * 0.3, W * 0.86, 400, sans);
+    }
+    g.restore();
     // 섬광
-    if (k > 0.72) {
-      const f = k < 0.78 ? (k - 0.72) / 0.06 : Math.max(0, 1 - (k - 0.78) / 0.16);
+    if (el > F - 0.15) {
+      const f = el < F ? (el - F + 0.15) / 0.15 : Math.max(0, 1 - (el - F) / 0.65);
       const gr = g.createRadialGradient(cx, cy, 0, cx, cy, maxR);
       gr.addColorStop(0, `rgba(255,252,240,${0.95 * f})`); gr.addColorStop(0.4, `rgba(255,236,200,${0.6 * f})`); gr.addColorStop(1, `rgba(255,236,200,${0.1 * f})`);
       g.fillStyle = gr; g.fillRect(0, 0, W, H);
-      if (!warp.flashed && k >= 0.78) { warp.flashed = true; document.body.classList.remove('warping'); enter(); shownP = -1; }
     }
   }
 
@@ -249,6 +289,7 @@
     }
     if (eventOn && !ev.draw(g, W, H, t, dt)) endEvent();
     drawRipples(now);
+    drawFloats(t, dt, now);
     drawWarp(now);
     if (Math.abs(p - shownP) > 2e-5) { shownP = p; renderWords(p); }
     requestAnimationFrame(frame);
@@ -327,8 +368,9 @@
     store.set(MKEY, [...seen.filter((x) => x !== i), i].slice(-Math.floor(n * 0.6)));
     return i;
   }
-  // 한 문장씩 돌려 보여 주기: 비유(머리) → 한마디 → 남은 것(돌 때마다 다른 항목) → (숫자도 보기면) 숫자 줄
+  // 한 문장씩 돌려 보여 주기: 비유(머리) → 한마디 → 남은 것 → 농담 한 줄(둘 다 돌 때마다 다른 항목) → (숫자도 보기면) 숫자 줄
   const LINE_HOLD = 5200, LINE_FADE = 900;
+  let quips = [], quipIdx = 0;
   let lines = { head: '', note: '' }, lineIdx = 0, lineTimer = null, lineSwap = null, detailText = '', swapping = false;
   function putLine(text, instant) {
     const el = $('#line');
@@ -345,7 +387,8 @@
     }, el.textContent ? LINE_FADE : 0);
   }
   function lineSeq() {
-    const seq = [() => lines.head, () => lines.note, () => { const r = remainItems[remainIdx % Math.max(1, remainItems.length)] || ''; remainIdx++; return r; }];
+    const seq = [() => lines.head, () => lines.note, () => { const r = remainItems[remainIdx % Math.max(1, remainItems.length)] || ''; remainIdx++; return r; },
+      () => { const q = quips[quipIdx % Math.max(1, quips.length)] || ''; quipIdx++; return q; }];
     if (st.detail && detailText) seq.push(() => detailText);
     return seq;
   }
@@ -367,6 +410,7 @@
     sessionSeed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
     const rnd = U.rng(sessionSeed);
     pk = U.picker(sessionSeed); remainIdx = 0;
+    quips = M.quipsFor(ready() ? M.currentAge(st) : 40, U.rng(sessionSeed ^ 0x5bd1e995)); quipIdx = 0;
     meta = pickMetaphor(rnd);
     t += 600 + rnd() * 3000;           // 그림 시계를 건너뛰어 열 때마다 다른 무늬 · 하늘 · 바다 상태로
     startWarp(); shownP = -1;
@@ -376,7 +420,7 @@
   function renderWords(p) {
     if (!ready()) return;
     const age = p * st.lifespan, s = M.sayMetaphor(meta, p, { age, lifespan: st.lifespan }, pk);
-    lines = { head: `${s.label} ${s.big}${s.suf ? ` ${s.suf}` : ''}`, note: s.note || '' };
+    lines = { head: `${s.label} ${s.big}${s.suf === '째' ? '째' : s.suf ? ` ${s.suf}` : ''}`, note: s.note || '' };
     if (scrub) putLine(lines.head, true);                    // 끄는 동안은 비유 문장이 손가락을 바로 따라간다
     else if (lineIdx === 0 && !swapping) {                   // 비유 문장이 떠 있으면 숫자가 굴러가는 대로(되감기 중) 그 자리에서 바뀐다
       const el = $('#line');
@@ -413,19 +457,21 @@
     newsBusy = true; newsLast = Date.now();
     const db = store.get(NKEY) || {}, notes = [];
     let fired = null;
-    for (const topic of topics) {
+    for (const [ti, topic] of topics.entries()) {
+      const name = `관심 ${ti + 1}`;
       try {
         const items = await provider.fetch(topic);
         const sig = M.newsCheck(topic, items, db);
         const r = db[topic];
-        notes.push(`${topic} 최근 3시간 ${r.recent}건(평소 ${r.baseline})${sig ? ` → ${sig.tone > 0.2 ? '좋은 소식' : sig.tone < -0.2 ? '나쁜 소식' : '큰 뉴스'}` : ''}`);
+        notes.push(`${name} 최근 3시간 ${r.recent}건(평소 ${r.baseline})${sig ? ` → ${sig.tone > 0.2 ? '좋은 소식' : sig.tone < -0.2 ? '나쁜 소식' : '큰 뉴스'}` : ''}`);
         if (sig && !fired) fired = sig;
-      } catch (e) { console.warn(e); notes.push(`${topic} 못 받음`); }
+      } catch (e) { console.warn(e); notes.push(`${name} 못 받음`); }
     }
     for (const k of Object.keys(db)) if (!topics.includes(k)) delete db[k]; // 지운 주제의 기록은 버린다
     store.set(NKEY, db);
     const hm = new Date(newsLast).toTimeString().slice(0, 5);
     newsNote = `${hm} 확인 · ${notes.join(' · ')}`;
+    if (floating && !floats.length) spawnFloats();
     if ($('#newsStatus')) $('#newsStatus').textContent = newsNote;
     newsBusy = false;
     if (fired && !eventOn) startEvent(fired);
@@ -452,13 +498,14 @@
   function setSaver(on) {
     if (saverOn === on) return;
     saverOn = on; saverSince = Date.now(); saverDeep = false;
+    if (on) { goPage(0); hideFloats(true); }
     document.body.classList.toggle('saver', on);
     if (!on && saverSlept) { saverSlept = false; applyScreen(); } // 깨면 다시 켜 두기
     applyBrightness();
   }
   const touched = () => { lastTouch = Date.now(); };
   setInterval(() => {
-    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#quick').open && !$('#guide').open && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
+    if (!saverOn && st.saverMin > 0 && ready() && !dlg.open && !$('#quick').open && !$('#guide').open && !M.aiChatOpen() && Date.now() - lastTouch > st.saverMin * 60e3) setSaver(true);
     if (!saverOn) return;
     const on = Date.now() - saverSince;
     if (!saverDeep && on > 30 * 60e3) { saverDeep = true; applyBrightness(); }
@@ -476,7 +523,10 @@
   addEventListener('pointerdown', (e) => {
     touched();
     // 장면 · 화면 보호기 중 첫 손길은 끝내기 · 깨우기만
-    if (eventOn || saverOn) { if (eventOn) ev.stop(t); setSaver(false); e.stopPropagation(); e.preventDefault(); }
+    if (eventOn || saverOn) { if (eventOn) ev.stop(t); setSaver(false); e.stopPropagation(); e.preventDefault(); return; }
+    // 넘어가기 중에 누르면 바로 섬광으로(대화 상자를 누른 것이 아닐 때만)
+    const now = performance.now();
+    if (warpSkippable(now) && !dlg.open && !$('#quick').open && !$('#guide').open) { warp.start = now - (warp.flashAt - 0.15) * 1000; e.stopPropagation(); e.preventDefault(); }
   }, true);
   addEventListener('keydown', touched, true);
   cv.addEventListener('pointerdown', (e) => {
@@ -495,7 +545,7 @@
       const from = scrub.p;
       scrub = null; document.body.classList.remove('scrubbing');
       replay(1100, from); enter();                           // 놓으면 지금으로 돌아오며 첫 문장부터 다시
-    } else if (e.type === 'pointerup' && performance.now() - down.t < 450) {
+    } else if (e.type === 'pointerup' && performance.now() - down.t < 450 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 14) {
       const r = { x: e.clientX, y: e.clientY, start: performance.now(), sparks: [] };
       for (let i = 0; i < 14; i++) r.sparks.push({ a: Math.random() * U.TAU, v: 30 + Math.random() * 70 });
       ripples.push(r);
@@ -589,9 +639,12 @@
     $('#newsStatus').textContent = provider ? newsNote || '아직 확인 전이에요 (화면이 켜져 있는 동안 20분마다)' : '';
     for (const el of $('#newsBox').querySelectorAll('.seg:first-of-type, #newsStatus')) el.hidden = !provider;
     $('#newsBox').hidden = !provider && !M.SAMPLE_NEWS;
+    $('#savedBox').hidden = !provider;
+    renderAiBox();
     radio('keepOn', st.keepOn ? 'on' : 'off');
     radio('saver', String(st.saverMin));
     radio('saverOff', String(st.saverOffH));
+    radio('savedDays', String(st.savedDays));
     pickedSaver = st.saverStyle || 'mix'; syncSaverChips();
     $('#fBright').value = st.bright; $('#fSaverBright').value = st.saverBright;
     syncScreenForm();
@@ -655,6 +708,8 @@
     st.keepOn = radioValue('keepOn') === 'on';
     st.saverMin = +(radioValue('saver') || 0);
     st.saverOffH = +(radioValue('saverOff') ?? 3);
+    st.savedDays = U.clamp(+(radioValue('savedDays') || 1), 1, 7);
+    cleanSaved();
     st.saverStyle = pickedSaver;
     st.bright = +$('#fBright').value; st.saverBright = +$('#fSaverBright').value;
     applyScreen();
@@ -678,6 +733,32 @@
   const qdlg = $('#quick');
   buildBgGrid($('#qBgGrid'), () => syncBgGrid($('#qBgGrid')));
   buildIntChips($('#qIntChips'), '#qInt1', '#qInt2');
+  // 설정: 폰 안 AI 모델 받기 · 지우기
+  async function renderAiBox() {
+    const box = $('#aiBox'), note = $('#aiStatus'), btn = $('#aiModelBtn');
+    box.hidden = !M.ai.has() || !provider;
+    if (box.hidden) return;
+    const s = await M.ai.status(), gb = (n) => `${(n / 1e9).toFixed(1)}GB`;
+    $('#aiChatBtn').hidden = !s.supported || !s.downloaded;
+    if (!s.supported) { note.textContent = `이 폰의 칩(${s.soc || '알 수 없음'})에서는 아직 쓸 수 없어요.`; btn.hidden = true; return; }
+    btn.hidden = false; btn.disabled = false;
+    if (s.downloaded) {
+      note.textContent = `모델 받음 · ${gb(s.size)}. 브리핑의 AI 단추를 누를 때만 잠깐 메모리에 올려요.`;
+      btn.textContent = '모델 지우기';
+      btn.onclick = async () => { btn.disabled = true; await M.ai.remove(); renderAiBox(); };
+    } else {
+      note.textContent = `모델은 ${gb(s.size)}이에요. 브리핑에서 AI 단추를 처음 누를 때 받아도 돼요.${s.wifi ? '' : ' 지금은 모바일 데이터예요.'}`;
+      btn.textContent = s.downloading ? '받는 중…' : '모델 받기';
+      btn.disabled = !!s.downloading;
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await M.ai.download((e) => { if (e.total) btn.textContent = `받는 중 · ${gb(e.done)} / ${gb(e.total)}`; });
+        } catch (e) { note.textContent = '받다가 끊겼어요. 다시 누르면 이어서 받아요.'; }
+        renderAiBox();
+      };
+    }
+  }
   function openQuick() {
     if (!ready()) { openSettings(false); return; }
     pickedBg = st.theme; syncBgGrid($('#qBgGrid'));
@@ -693,6 +774,288 @@
     if (JSON.stringify(st.interests) !== oldInts) setTimeout(pollNews, 1500);
   });
   $('#qClose').addEventListener('click', () => qdlg.close());
+
+  /* ── 떠다니는 쪽지: 위로 스와이프하면 배경에 어울리는 사물이 낱말을 달고 떠오른다 ── */
+  // 낱말은 제목에서 뽑은 짧은 말(주제 이름 뺌). 누르면 기사 한 줄이 작게 펼쳐지고, 그 줄을 누르면 저장함으로 날아간다.
+  // 저장함에서 누르면 원문으로. 아래로 스와이프하거나 30초 동안 손대지 않으면 사라진다. 뉴스 출처가 없는 빌드(출시판)에는 없다
+  const SAVEKEY = 'memento.saved', TAKENKEY = 'memento.taken', FLOAT_MS = 30e3, LINE_MS = 6e3, TIPKEY = 'memento.floatTip';
+  const TINTS = ['#f2c879', '#8fd3e8']; // 관심 1 · 관심 2를 색으로만 구분한다
+  const OBJ = {
+    bottle: '<path d="M10 3h4v3l1.5 3v10a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2V9L10 6z"/><path d="M10.5 12.5h3v4h-3z"/>',
+    satellite: '<rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9.5 12H3.5M14.5 12h6M3.5 9v6M20.5 9v6M12 9.5V6"/><circle cx="12" cy="5" r="1"/>',
+    kite: '<path d="M12 3l6 7-6 9-6-9z"/><path d="M6 10h12M12 3v16"/><path d="M12 19c-1 1 1 2 0 3"/>',
+    leaf: '<path d="M5 19C5 10.5 11 5 20 4.5 19.5 13.5 14 19 5.5 19"/><path d="M5 19l8.5-8.5"/>',
+    star: '<path d="M12 3.5l2.4 5.6 6.1.5-4.6 4 1.4 6-5.3-3.2-5.3 3.2 1.4-6-4.6-4 6.1-.5z"/>',
+    glow: '<circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="7" opacity=".4"/>',
+  };
+  const OBJ_OF = { 바다: 'bottle', 우주: 'satellite', 날씨: 'kite', 나무: 'leaf', 계절: 'leaf', 달: 'star' };
+  // 사물마다 흔들리는 모양: [좌우 폭, 위아래 폭, 기울기]
+  const SWAY = { bottle: [14, 7, 0.28], satellite: [22, 14, 0.12], kite: [20, 12, 0.3], leaf: [24, 10, 0.5], star: [12, 9, 0.08], glow: [18, 14, 0] };
+  let page = 0, saved = store.get(SAVEKEY) || [], swipedAt = 0, floating = false, floats = [], floatUntil = 0, openFloat = null, lastShown = new Set();
+  const ago = (ms) => { const m = Math.max(1, Math.round((Date.now() - ms) / 60e3)); return m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
+  const isSaved = (it) => saved.some((x) => x.h === it.h);
+  // 한 번 저장한 기사는 쪽지로 다시 뜨지 않는다 — 저장함에서 지워도, 저장함이 넘쳐 밀려나도. 뉴스 기록(7일)이 지나면 잊는다
+  let taken = (store.get(TAKENKEY) || saved.map((x) => ({ h: x.h, w: '', topic: x.topic, at: x.at || Date.now() }))).filter((x) => Date.now() - x.at < 8 * 864e5);
+  store.set(TAKENKEY, taken);
+  // 자동 정리: 핀을 꽂지 않은 기사는 저장한 지 st.savedDays 일이 지나면 지운다
+  const DAY_MS = 864e5, savedExpiry = (it) => (it.at || Date.now()) + st.savedDays * DAY_MS;
+  function cleanSaved() {
+    const left = saved.filter((x) => x.pin || savedExpiry(x) > Date.now());
+    if (left.length !== saved.length) { saved = left; store.set(SAVEKEY, saved); }
+    $('#savedCount').textContent = saved.length;
+    if (page) renderSaved();
+  }
+  const isTaken = (it, topic) => taken.some((x) => x.topic === topic && M.newsSameStory(x.h, it.h, topic));
+  const takenWords = (topic) => new Set(taken.filter((x) => x.topic === topic && x.w).map((x) => x.w.toLowerCase()));
+  // 제목 속 주제 이름은 가린다
+  const mask = (text, topic) => M.maskTopics(text, [topic, ...textTopics()]);
+  function goPage(n) {
+    page = n ? 1 : 0; document.body.dataset.page = String(page);
+    if (!page) M.closeBrief();
+    if (page) { cleanSaved(); renderSaved(); }
+    else if (floating) floatUntil = performance.now() + FLOAT_MS;
+  }
+  function showTip(text, ms = 3500) {
+    const el = $('#floatTip');
+    el.textContent = text; el.hidden = false; el.style.opacity = 1;
+    clearTimeout(showTip.t); showTip.t = setTimeout(() => { el.style.opacity = 0; setTimeout(() => { el.hidden = true; }, 600); }, ms);
+  }
+  function addFloat(word, item, topic, tint, i, n, kind, slot) {
+    const wrap = document.createElement('div'); wrap.className = 'float'; wrap.style.setProperty('--tint', tint);
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'float-btn';
+    btn.innerHTML = `${M.iconSvg(OBJ[kind], 26)}<span></span>`; btn.lastChild.textContent = word;
+    wrap.append(btn); $('#floats').append(wrap);
+    // 자리: 위쪽 문장과 아래 인생 줄을 비켜 고르게 흩어 놓는다
+    const f = {
+      el: wrap, btn, word, item, topic, kind,
+      x0: slot ? slot.x0 : 0.14 + ((i * 0.618 + 0.2) % 1) * 0.72, y0: slot ? slot.y0 : 0.24 + ((i + 0.5) / n) * 0.52 + (Math.random() - 0.5) * 0.03,
+      ph: Math.random() * U.TAU, born: performance.now() + (slot ? 0 : i * 220), gone: 0, y: 0,
+    };
+    btn.onclick = () => { if (performance.now() - swipedAt > 350) toggleLine(f); };
+    floats.push(f);
+    return f;
+  }
+  // 지금 띄울 수 있는 쪽지 후보(저장한 것 · 겹치는 것 빼고), 앞일수록 많이 나온 낱말
+  function floatPool() {
+    const db = store.get(NKEY) || {}, seen = new Set(), pool = [];
+    textTopics().forEach((topic, ti) => {
+      const list = M.newsLatest(db[topic], 100).filter((it) => !isTaken(it, topic));
+      M.newsKeywords(list, topic, 24, takenWords(topic)).forEach((k, rank) => {
+        if (seen.has(k.item.h) || seen.has(k.word)) return;
+        seen.add(k.item.h); seen.add(k.word);
+        pool.push({ ...k, topic, tint: TINTS[ti % 2], rank });
+      });
+    });
+    return pool;
+  }
+  // 떠 있을 때 또 위로 스와이프하면 몇 개만 가라앉고 그 자리에 새 쪽지가 떠오른다
+  function refreshFloats() {
+    const live = floats.filter((f) => !f.gone && f.item && f !== openFloat);
+    const onScreen = new Set(floats.filter((f) => !f.gone).flatMap((f) => [f.word, f.item ? f.item.h : '']));
+    const fresh = floatPool().filter((k) => !onScreen.has(k.word) && !onScreen.has(k.item.h)).map((k) => [k.rank / 24 + Math.random() * 0.8, k]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    if (!live.length || !fresh.length) return;
+    const n = Math.min(fresh.length, Math.max(2, Math.round(live.length * 0.35)));
+    const out = live.map((f) => [Math.random(), f]).sort((a, b) => a[0] - b[0]).slice(0, n).map((x) => x[1]);
+    const now = performance.now();
+    out.forEach((f, i) => {
+      f.gone = now;
+      const k = fresh[i], nf = addFloat(k.word, k.item, k.topic, k.tint, i, n, f.kind, f);
+      nf.born = now + 450 + i * 180;
+    });
+    lastShown = new Set(floats.filter((f) => !f.gone && f.item).map((f) => f.item.h));
+  }
+  function spawnFloats() {
+    const topics = textTopics();
+    if (!topics.length) {
+      const f = addFloat('관심 주제 넣기', null, '', TINTS[0], 2, 5, OBJ_OF[st.theme] || 'glow');
+      f.btn.onclick = () => { hideFloats(false); openQuick(); };
+      return;
+    }
+    const pool = floatPool();
+    if (!pool.length) { showTip(newsBusy ? '소식을 건지는 중이에요' : '아직 떠다니는 소식이 없어요'); return; }
+    // 지난번 쪽지를 절반 남짓 남기고 나머지는 새것으로 — 스와이프할 때마다 조금씩 달라진다
+    const total = Math.min(pool.length, 6 + Math.floor(Math.random() * 3));
+    const shuffled = (list) => list.map((k) => [k.rank / 24 + Math.random() * 0.8, k]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    const before = shuffled(pool.filter((k) => lastShown.has(k.item.h))), fresh = shuffled(pool.filter((k) => !lastShown.has(k.item.h)));
+    const keep = before.slice(0, Math.round(total * 0.55));
+    const picks = [...keep, ...fresh.slice(0, total - keep.length)];
+    if (picks.length < total) picks.push(...before.slice(keep.length, keep.length + total - picks.length));
+    const kind = OBJ_OF[st.theme] || 'glow';
+    picks.forEach((k, i) => addFloat(k.word, k.item, k.topic, k.tint, i, picks.length, kind));
+    lastShown = new Set(picks.map((k) => k.item.h));
+    const seenTip = store.get(TIPKEY) || 0;
+    if (seenTip < 3) { store.set(TIPKEY, seenTip + 1); showTip('누르면 한 줄 · 그 줄을 누르면 저장 · 아래로 내리면 사라져요', 5000); }
+  }
+  function showFloats() {
+    if (floating) { floatUntil = performance.now() + FLOAT_MS; refreshFloats(); return; }
+    floating = true; floatUntil = performance.now() + FLOAT_MS;
+    document.body.classList.add('floating');
+    $('#toSaved').hidden = false; $('#savedCount').textContent = saved.length;
+    $('#toChat').hidden = !M.ai.has();
+    spawnFloats();
+    if (Date.now() - newsLast > 5 * 60e3) pollNews();
+  }
+  function hideFloats(now) {
+    if (!floating) return;
+    floating = false; closeLine();
+    document.body.classList.remove('floating');
+    $('#toSaved').hidden = true; $('#toChat').hidden = true;
+    const t0 = performance.now();
+    for (const f of floats) { f.gone = t0; if (now) f.el.remove(); }
+    if (now) floats = [];
+  }
+  function closeLine() {
+    if (!openFloat) return;
+    const l = openFloat.el.querySelector('.float-line'); if (l) l.remove();
+    openFloat.el.style.zIndex = '';
+    clearTimeout(closeLine.t); openFloat = null;
+  }
+  function toggleLine(f) {
+    floatUntil = performance.now() + FLOAT_MS;
+    const same = openFloat === f;
+    closeLine();
+    if (same || !f.item) return;
+    const line = document.createElement('div'); line.className = 'float-line';
+    const text = document.createElement('button'); text.type = 'button'; text.className = 'fl-text';
+    text.textContent = mask(f.item.h, f.topic);
+    const small = document.createElement('small'); small.textContent = `${f.item.s ? `${f.item.s} · ` : ''}${ago(f.item.t)} · 누르면 저장`;
+    text.append(small);
+    text.onclick = () => { if (performance.now() - swipedAt > 350) saveFloat(f, line); };
+    const brief = document.createElement('button'); brief.type = 'button'; brief.className = 'fl-brief'; brief.setAttribute('aria-label', '연관 브리핑');
+    brief.innerHTML = M.iconSvg(BRIEF_SVG, 18);
+    brief.onclick = () => { closeLine(); openBrief(f.item.h, f.topic, f.word); };
+    line.append(text, brief);
+    f.el.append(line); f.el.style.zIndex = 3; openFloat = f;
+    // 화면 밖으로 나가지 않게 옮긴다
+    const r = line.getBoundingClientRect(), half = r.width / 2, c = r.left + half;
+    const dx = c < half + 10 ? half + 10 - c : c > W - half - 10 ? W - half - 10 - c : 0;
+    line.style.setProperty('--shift', `calc(-50% + ${dx}px)`);
+    closeLine.t = setTimeout(closeLine, LINE_MS);
+  }
+  // 그 줄을 누르면: 저장함 아이콘으로 날아가고 쪽지는 사라진다
+  function saveFloat(f, line) {
+    const it = f.item;
+    floatUntil = performance.now() + FLOAT_MS;
+    if (!isSaved(it)) {
+      saved.unshift({ h: it.h, l: it.l, s: it.s || '', t: it.t, topic: f.topic, at: Date.now() });
+      if (saved.length > 200) { const k = saved.map((x) => !!x.pin).lastIndexOf(false); if (k >= 0) saved.splice(k, 1); }
+      store.set(SAVEKEY, saved);
+      taken.push({ h: it.h, w: f.word, topic: f.topic, at: Date.now() });
+      store.set(TAKENKEY, taken);
+    }
+    // 같은 소식 · 같은 낱말을 단 다른 쪽지도 함께 가라앉는다
+    for (const o of floats) if (o !== f && !o.gone && o.item && o.topic === f.topic && (o.word === f.word || M.newsSameStory(o.item.h, it.h, f.topic))) o.gone = performance.now();
+    const from = line.getBoundingClientRect(), to = $('#toSaved').getBoundingClientRect();
+    const fly = document.createElement('p'); fly.className = 'fly-line'; fly.textContent = mask(it.h, f.topic);
+    Object.assign(fly.style, { left: `${from.left + 10}px`, top: `${from.top + 8}px`, width: `${from.width - 20}px` });
+    document.body.append(fly);
+    const dx = to.left + to.width / 2 - from.left, dy = to.top + to.height / 2 - from.top;
+    const done = () => {
+      fly.remove();
+      $('#savedCount').textContent = saved.length;
+      const tab = $('#toSaved'); tab.classList.remove('bump'); void tab.offsetWidth; tab.classList.add('bump');
+    };
+    if (fly.animate && slow === 1) {
+      fly.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(.08)`, opacity: 0.2 }], { duration: 600, easing: 'cubic-bezier(.5, 0, .2, 1)' }).onfinish = done;
+    } else done();
+    closeLine(); f.gone = performance.now();
+  }
+  // 매 프레임: 아래에서 떠올라 숨 쉬듯 흔들리고, 사라질 때는 가라앉는다
+  function drawFloats(t, dt, now) {
+    if (floating && !page && !M.briefOpen() && now > floatUntil) hideFloats(false);
+    for (let i = floats.length - 1; i >= 0; i--) {
+      const f = floats[i];
+      if (f.gone && now - f.gone > 900) { f.el.remove(); floats.splice(i, 1); if (openFloat === f) openFloat = null; continue; }
+      const up = U.clamp((now - f.born) / 1800, 0, 1), ease1 = 1 - (1 - up) ** 3;
+      const out = f.gone ? U.clamp((now - f.gone) / 900, 0, 1) : 0;
+      const [sx, sy, tilt] = SWAY[f.kind];
+      const held = openFloat === f;                       // 펼쳐 둔 동안은 멈춰 있어 읽기 쉽게
+      if (!held) f.ph += dt * 0.25;
+      const x = f.x0 * W + Math.sin(f.ph) * sx, yt = f.y0 * H + Math.sin(f.ph * 1.7 + 1) * sy + (M.breath ? (M.breath(t + f.x0 * 5) - 0.5) * 6 : 0);
+      const y = U.lerp(H + 40, yt, ease1) + out * 50;
+      f.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      f.btn.firstChild.style.transform = `rotate(${(Math.sin(f.ph * 1.3) * tilt).toFixed(3)}rad)`;
+      f.el.style.opacity = String((up > 0 ? Math.min(1, up * 2.5) : 0) * (1 - out) * 0.92);
+    }
+  }
+  const BOOK_SVG = '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
+  const DEL_SVG = '<path d="M6 6l12 12M18 6L6 18"/>';
+  const PIN_SVG = '<path d="M9 3h6l-1 6 4 4v2H6v-2l4-4z"/><path d="M12 15v6"/>';
+  const BRIEF_SVG = '<circle cx="12" cy="12" r="2.6"/><circle cx="5" cy="5" r="1.7"/><circle cx="19" cy="5" r="1.7"/><circle cx="5" cy="19" r="1.7"/><circle cx="19" cy="19" r="1.7"/><path d="M10.2 10.2L6.3 6.3M13.8 10.2l3.9-3.9M10.2 13.8l-3.9 3.9M13.8 13.8l3.9 3.9"/>';
+  const leftText = (it) => { const h = Math.ceil((savedExpiry(it) - Date.now()) / 3600e3); return h <= 24 ? `${h}시간 뒤 정리` : `${Math.ceil(h / 24)}일 뒤 정리`; };
+  function openBrief(h, topic, word) {
+    M.openBrief({ h, word, db: store.get(NKEY) || {}, interests: textTopics(), mask: (x) => mask(x, topic), openLink, onClose: () => { if (floating) floatUntil = performance.now() + FLOAT_MS; } });
+  }
+  function renderSaved() {
+    const box = $('#savedList'); box.innerHTML = '';
+    $('#savedCount2').textContent = saved.length ? `${saved.length}개` : '';
+    const canDigest = M.ai.has() && saved.length >= 2;
+    $('#savedDigest').hidden = !canDigest; $('#savedGap').hidden = canDigest;
+    $('#savedCount').textContent = saved.length;
+    if (!saved.length) {
+      const li = document.createElement('li'); li.className = 'saved-empty';
+      li.textContent = `떠다니는 쪽지를 눌러 기사 한 줄을 펼치고, 그 줄을 누르면 여기로 옮겨져요. ${st.savedDays}일이 지나면 정리되고, 핀을 꽂으면 남아요`;
+      box.append(li);
+      return;
+    }
+    [...saved].sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0)).forEach((it) => {
+      const li = document.createElement('li'); li.className = `saved-item${it.pin ? ' pinned' : ''}`;
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'saved-open';
+      open.innerHTML = `<b></b><span>${M.iconSvg(BOOK_SVG, 13)}<em></em><em class="left"></em></span>`;
+      open.querySelector('b').textContent = mask(it.h, it.topic);
+      open.querySelector('em').textContent = `${it.s ? `${it.s} · ` : ''}${ago(it.t)}`;
+      open.querySelector('.left').textContent = it.pin ? '· 핀 꽂음' : `· ${leftText(it)}`;
+      open.onclick = () => { if (performance.now() - swipedAt > 350) openLink(it.l); };
+      const acts = document.createElement('div'); acts.className = 'saved-acts';
+      const act = (cls, label, svg, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.setAttribute('aria-label', label); b.innerHTML = M.iconSvg(svg, 17); b.onclick = fn; acts.append(b); };
+      act('act-brief', '연관 브리핑', BRIEF_SVG, () => openBrief(it.h, it.topic));
+      act(`act-pin${it.pin ? ' on' : ''}`, it.pin ? '핀 빼기' : '지우지 않게 핀 꽂기', PIN_SVG, () => {
+        it.pin = !it.pin;
+        if (!it.pin) it.at = Date.now();                // 핀을 뺀 때부터 다시 세어 곧바로 사라지지 않게
+        store.set(SAVEKEY, saved); renderSaved();
+      });
+      act('saved-del', '저장에서 지우기', DEL_SVG, () => { saved = saved.filter((x) => x !== it); store.set(SAVEKEY, saved); renderSaved(); });
+      li.append(open, acts); box.append(li);
+    });
+  }
+  // 앱에서는 앱 안 브라우저 창(닫으면 메멘토로 돌아온다), 브라우저에서는 새 탭
+  function openLink(url) {
+    const B = plug('Browser');
+    if (B) B.open({ url }).catch((e) => console.warn(e));
+    else window.open(url, '_blank', 'noopener');
+  }
+  $('#savedBack').addEventListener('click', () => goPage(0));
+  $('#toSaved').addEventListener('click', () => goPage(1));
+  const openFreeChat = () => M.openFreeChat({ mask: (x) => mask(x), openLink });
+  $('#toChat').addEventListener('click', openFreeChat);
+  $('#aiChatBtn').addEventListener('click', () => { dlg.close(); openFreeChat(); });
+  $('#savedDigest').addEventListener('click', () => M.openDigest({ items: saved, mask, openLink }));
+  // 세로 스와이프 — 터치 · 마우스 모두. 메인: 위로 = 쪽지 띄우기, 아래로 = 지우기. 저장함: 아래로 = 닫기(목록 맨 위일 때만)
+  let sw = null, lastTouchAt = 0;
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) cleanSaved(); });
+  const swipeBlocked = () => !provider || !ready() || DREAM || eventOn || saverOn || scrub || warpSkippable(performance.now())
+    || dlg.open || qdlg.open || $('#guide').open || M.briefOpen();
+  const swStart = (x, y, target) => { sw = swipeBlocked() ? null : { x, y, t: performance.now(), target }; };
+  const swEnd = (x, y) => {
+    if (!sw) return;
+    const dx = x - sw.x, dy = y - sw.y, el = performance.now() - sw.t, target = sw.target;
+    sw = null;
+    if (scrub || el > 1500 || Math.abs(dy) < 60 || Math.abs(dy) < Math.abs(dx) * 1.5) return;
+    swipedAt = performance.now();
+    if (page) {
+      if (dy > 0 && !($('#savedList').contains(target) && $('#savedList').scrollTop > 0)) goPage(0);
+      return;
+    }
+    if (dy < 0) showFloats(); else hideFloats(false);
+  };
+  document.addEventListener('touchstart', (e) => { lastTouchAt = performance.now(); if (e.touches.length === 1) swStart(e.touches[0].clientX, e.touches[0].clientY, e.target); else sw = null; }, { passive: true });
+  document.addEventListener('touchend', (e) => { lastTouchAt = performance.now(); const c = e.changedTouches[0]; if (c) swEnd(c.clientX, c.clientY); }, { passive: true });
+  document.addEventListener('mousedown', (e) => { if (performance.now() - lastTouchAt > 800) swStart(e.clientX, e.clientY, e.target); });
+  document.addEventListener('mouseup', (e) => { if (performance.now() - lastTouchAt > 800) swEnd(e.clientX, e.clientY); });
+  document.body.dataset.page = '0';
+  cleanSaved();
+  $('#swipeHint').hidden = !provider || DREAM;
+  $('#savedCount').textContent = saved.length;
   document.querySelectorAll('input[name=keepOn]').forEach((r) => r.addEventListener('change', syncScreenForm));
   $('#fBright').addEventListener('input', syncScreenForm);
   $('#fSaverBright').addEventListener('input', syncScreenForm);

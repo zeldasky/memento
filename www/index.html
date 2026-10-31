@@ -36,6 +36,59 @@
   <h1 class="line" id="line" title="눌러서 다른 비유 보기"></h1>
 </main>
 
+<!-- 위로 스와이프: 배경에 어울리는 사물이 낱말을 달고 떠오른다(기본 화면 그대로). 아래로 스와이프 · 30초 뒤 사라진다 -->
+<div class="floats" id="floats" aria-label="관심 주제 소식"></div>
+<p class="float-tip" id="floatTip" hidden></p>
+<button class="saved-tab chat-tab" id="toChat" type="button" aria-label="AI에게 묻기" hidden>
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>
+</button>
+<button class="saved-tab" id="toSaved" type="button" aria-label="저장함 열기" hidden>
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12v17l-6-4-6 4z"/></svg>
+  <b id="savedCount">0</b>
+</button>
+<section class="brief" id="brief" aria-label="연관 브리핑" hidden>
+  <header class="page-top">
+    <button class="icon-btn" id="briefBack" type="button" aria-label="브리핑 닫기">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <h2>연관 브리핑</h2>
+    <span class="page-top-gap"></span>
+  </header>
+  <div class="brief-body" id="briefBody"></div>
+</section>
+<section class="ai-chat" id="aiChat" aria-label="AI에게 묻기" hidden>
+  <header class="page-top">
+    <button class="icon-btn" id="aiChatBack" type="button" aria-label="대화 닫기">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <h2>AI에게 묻기 <small id="aiChatCtx"></small></h2>
+    <span class="page-top-gap"></span>
+  </header>
+  <div class="ai-msgs" id="aiMsgs"></div>
+  <form class="ai-form" id="aiForm" autocomplete="off">
+    <textarea id="aiText" rows="1" placeholder="궁금한 걸 물어보세요" enterkeyhint="send"></textarea>
+    <button type="submit" id="aiSend" aria-label="보내기">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+    </button>
+  </form>
+</section>
+<section class="page" id="pageSaved" aria-label="저장한 기사">
+  <header class="page-top">
+    <button class="icon-btn" id="savedBack" type="button" aria-label="메인 화면으로">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <h2>저장한 기사 <small id="savedCount2"></small></h2>
+    <button class="icon-btn" id="savedDigest" type="button" aria-label="저장한 기사 엮어 읽기" hidden>
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>
+    </button>
+    <span class="page-top-gap" id="savedGap"></span>
+  </header>
+  <ul class="saved-list" id="savedList"></ul>
+</section>
+<div class="swipe-hint" id="swipeHint" hidden aria-hidden="true">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
+</div>
+
 <footer class="lifeline" id="lifeline" hidden>
   <div class="track"><div class="done" id="lineDone"></div><div class="dot" id="lineDot"><span id="dotLabel">지금</span></div></div>
   <div class="ends"><span id="endL">태어난 날</span><span id="endR">마지막 날</span></div>
@@ -141,6 +194,26 @@
       <p class="hint">화면 보호기는 화면(번인)과 배터리를 지켜요. 손대지 않으면 글을 모두 지우고, 화면 대부분을 끈 채 작은 그림 창만 화면 곳곳을 천천히 떠돌아요. 30분 뒤엔 더 어둡게, 정한 시간이 지나면 화면을 꺼요. 누르면 돌아와요. 관심 주제에 특이 뉴스가 생기면 30초 동안 글자 없는 장면으로 알려요.<br>충전 중에는 앱을 열지 않아도 쓸 수 있어요: 폰 설정 → 디스플레이 → 화면 보호기 → 메멘토</p>
     </fieldset>
 
+    <fieldset id="aiBox" hidden>
+      <legend>폰 안 AI <span class="legend-sub">칩 안에서 돌아요 · 기사 제목만 읽어요</span></legend>
+      <p class="hint" id="aiStatus"></p>
+      <button type="button" class="ai-set-btn" id="aiChatBtn">AI에게 묻기</button>
+      <button type="button" class="ai-set-btn" id="aiModelBtn"></button>
+    </fieldset>
+
+    <fieldset id="savedBox">
+      <legend>저장한 기사 정리 <span class="legend-sub">핀을 꽂은 기사는 남아요</span></legend>
+      <div class="seg" id="savedDaysSeg">
+        <label><input type="radio" name="savedDays" value="1">1일</label>
+        <label><input type="radio" name="savedDays" value="2">2일</label>
+        <label><input type="radio" name="savedDays" value="3">3일</label>
+        <label><input type="radio" name="savedDays" value="4">4일</label>
+        <label><input type="radio" name="savedDays" value="5">5일</label>
+        <label><input type="radio" name="savedDays" value="6">6일</label>
+        <label><input type="radio" name="savedDays" value="7">7일</label>
+      </div>
+    </fieldset>
+
     <fieldset id="newsBox">
       <legend>뉴스 특이점 <span class="legend-sub" id="newsSource"></span></legend>
       <div class="seg">
@@ -154,7 +227,7 @@
         <label><input type="radio" name="newsPreview" value="surprise">좋은 소식</label>
         <label><input type="radio" name="newsPreview" value="shock">나쁜 소식</label>
       </div>
-      <p class="hint">진짜 뉴스는 아직 안 받아요. 저장하면 시험용 기사 제목으로 30초짜리 장면을 바로 틀어요(글자는 안 나와요). 누르면 끝나요.</p>
+      <p class="hint">고른 뒤 저장하면 시험용 기사 제목으로 30초짜리 장면을 바로 틀어요(글자는 안 나와요). 누르면 끝나요.</p>
     </fieldset>
 
     <fieldset>
@@ -178,11 +251,15 @@
 <script src="js/core.js"></script>
 <script src="js/cities.js"></script>
 <script src="js/metaphors.js"></script>
+<script src="js/quips.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/signal.js"></script>
 <script src="js/news.js"></script>
 <script src="js/events.js"></script>
 <script src="js/saver.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/web.js"></script>
+<script src="js/brief.js"></script>
 <script src="js/guide.js"></script>
 <!-- 주제 고르기는 아래 순서가 우선순위 -->
 <script src="js/themes/moon.js"></script>
