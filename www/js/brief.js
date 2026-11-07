@@ -168,7 +168,7 @@
   let ctl = null;
   const CHAT_ICON = '<path d="M4 5h16v11H9l-5 4z"/>';
   const SPARK = '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>';
-  const AI_ERR = { memory: '지금은 메모리가 부족해요. 쓰지 않는 앱을 닫고 다시 눌러 주세요.', nomodel: 'AI 모델을 찾지 못했어요. 다시 받아 주세요.' };
+  const AI_ERR = { memory: '지금은 메모리가 부족해요. 쓰지 않는 앱을 닫고 다시 눌러 주세요.', nomodel: 'AI 모델을 찾지 못했어요. 다시 받아 주세요.', busy: '다른 앱이 AI 를 쓰고 있어요. 잠시 뒤 다시 눌러 주세요.' };
   const gb = (n) => `${(n / 1e9).toFixed(1)}GB`;
   // 모델 준비: 없으면 ui.ask 로 물어 받는다. 준비되면 상태, 아니면 null
   async function readyModel(mine, ui) {

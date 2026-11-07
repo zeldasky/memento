@@ -3,5 +3,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-sdk tools:overrideLibrary="com.geniex.sdk" />
-    <application android:extractNativeLibs="true" />
+    <application android:extractNativeLibs="true">
+        <!-- 다른 앱(TD)이 폰 안 AI 를 쓰는 창구. 밖으로 열지만 같은 서명 키의 앱만 받는다(MementoAiService.caller) -->
+        <service
+            android:name=".MementoAiService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="io.github.zeldasky.memento.AI" />
+            </intent-filter>
+        </service>
+    </application>
 </manifest>
