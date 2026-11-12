@@ -30,23 +30,80 @@
     })).filter((x) => x.url);
   }
   // 본문만: 메뉴 · 광고 · 스크립트를 걷어 내고 문단 목록으로
+  const BLOCK = /^(P|LI|H2|H3|BLOCKQUOTE|TD)$/, INLINE = /^(A|B|STRONG|EM|I|U|SPAN|FONT|MARK|SUB|SUP)$/;
+  // 그 영역의 글을 차례대로 문단으로: 문단 태그는 통째로, 그 밖은 줄바꿈(br)과 덩어리 태그에서 끊는다(본문을 br 로만 나눈 언론사가 많다)
+  function collect(root) {
+    const seen = new Set(), out = [];
+    const push = (raw) => { const t = clean(raw); if (t.length >= 25 && !seen.has(t)) { seen.add(t); out.push(t); } };
+    (function walk(e) {
+      let buf = '';
+      const flush = () => { push(buf); buf = ''; };
+      for (const c of e.childNodes) {
+        if (c.nodeType === 3) buf += c.nodeValue;
+        else if (c.nodeType !== 1) continue;
+        else if (c.tagName === 'BR') flush();
+        else if (INLINE.test(c.tagName) && !c.querySelector('p,div,br,li')) buf += c.textContent;
+        else if (BLOCK.test(c.tagName) && !c.querySelector('p,div,li')) { flush(); push(c.textContent); }
+        else { flush(); walk(c); }
+      }
+      flush();
+    })(root);
+    return out;
+  }
+  // 글이 바로 아래에 가장 많이 모인 영역 = 본문(메뉴 · 추천 기사 목록은 글이 여러 상자에 흩어져 있다)
+  function mainBlock(doc) {
+    let best = null, most = 0;
+    for (const e of doc.body.querySelectorAll('div,article,section,main,td')) {
+      let len = 0, buf = '';
+      const add = (raw) => { const t = clean(raw); if (t.length >= 25) len += t.length; };
+      for (const c of e.childNodes) {
+        if (c.nodeType === 3) buf += c.nodeValue;
+        else if (c.nodeType !== 1) continue;
+        else if (INLINE.test(c.tagName)) buf += c.textContent;
+        else { add(buf); buf = ''; if (c.tagName === 'P' || c.tagName === 'BLOCKQUOTE') add(c.textContent); }
+      }
+      add(buf);
+      if (len > most) { best = e; most = len; }
+    }
+    return most >= 300 ? best : null;
+  }
+  // 화면을 스크립트로 그리는 언론사: 페이지에 든 기사 데이터(JSON-LD articleBody · {"type":"text","content":…} 조각)에서 꺼낸다
+  function embedded(html) {
+    let body = '';
+    for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+      try {
+        const scan = (o) => {
+          if (!o || typeof o !== 'object') return;
+          if (typeof o.articleBody === 'string' && o.articleBody.length > body.length) body = o.articleBody;
+          for (const k in o) scan(o[k]);
+        };
+        scan(JSON.parse(m[1]));
+      } catch (e) { /* 깨진 JSON 은 건너뛴다 */ }
+    }
+    if (body.length >= 300) return body.split(/\n+|(?<=[.?!다])\s+(?=[^\s])/).map(clean).filter((t) => t.length >= 25);
+    const parts = [];
+    for (const m of html.matchAll(/\{[^{}]*"type":"text"[^{}]*\}/g)) {
+      try { const c = JSON.parse(m[0]).content; if (typeof c === 'string') parts.push(clean(c.replace(/<[^>]+>/g, ' '))); } catch (e) { /* 다음 조각 */ }
+    }
+    return parts.filter((t) => t.length >= 25);
+  }
+  // 본문만: 메뉴 · 광고 · 스크립트를 걷어 내고 문단 목록으로
   async function read(url) {
     const html = await M.getText(url);
     if ((html.match(/�/g) || []).length > 40) return [];   // 인코딩이 깨진 페이지
     const doc = dom(html);
-    doc.querySelectorAll('script,style,noscript,nav,header,footer,aside,form,iframe,svg,button,select,.ad,.ads,.advert,.comment,.comments,.related,.share,.sidebar').forEach((e) => e.remove());
-    const root = doc.querySelector('article') || doc.querySelector('main') || doc.querySelector('[itemprop=articleBody]') || doc.body;
-    if (!root) return [];
-    const seen = new Set(), out = [];
-    for (const e of root.querySelectorAll('p,li,h2,h3,td,blockquote,div')) {
-      if (e.tagName === 'DIV' && e.querySelector('p,li,div,table')) continue;  // 글이 바로 든 div 만
-      const t = clean(e.textContent);
-      if (t.length < 25 || seen.has(t)) continue;
-      seen.add(t); out.push(t);
+    doc.querySelectorAll('script,style,noscript,nav,header,footer,aside,form,iframe,svg,button,select,figure,figcaption,.ad,.ads,.advert,.comment,.comments,.related,.share,.sidebar').forEach((e) => e.remove());
+    if (!doc.body) return [];
+    const total = (list) => list.reduce((a, t) => a + t.length, 0);
+    const block = mainBlock(doc);
+    let out = block ? collect(block) : [];
+    if (total(out) < 300) {
+      const alt = collect(doc.querySelector('[itemprop=articleBody]') || doc.querySelector('article') || doc.querySelector('main') || doc.body);
+      if (total(alt) > total(out)) out = alt;
     }
-    if (!out.length) {
-      const t = clean(root.textContent);
-      for (let i = 0; i < t.length && i < 12000; i += 350) out.push(t.slice(i, i + 350));
+    if (total(out) < 400) {
+      const emb = embedded(html);
+      if (total(emb) > total(out)) out = emb;
     }
     return out;
   }
@@ -75,9 +132,79 @@
     if (got.length || kws.length < 3) return got;
     return within(provider.fetch(kws.slice(0, 2).join(' ')), 4000).catch(() => []);   // 낱말이 많아 안 나오면 앞의 둘로
   }
+  // 구글 뉴스 링크 안에 원문 주소가 그대로 든 옛 꼴이면 꺼낸다(요즘 꼴은 주소가 없어 제목으로 찾는다)
+  function fromGoogle(link) {
+    const m = (link || '').match(/\/articles\/([A-Za-z0-9_-]+)/);
+    if (!m) return '';
+    try {
+      const bin = atob(m[1].replace(/-/g, '+').replace(/_/g, '/'));
+      const u = bin.match(/https?:\/\/[!-~]+/);
+      return u && !/news\.google\./.test(u[0]) ? u[0] : '';
+    } catch (e) { return ''; }
+  }
+  // 요즘 꼴: 구글 뉴스 기사 페이지에 든 서명 · 시각으로 원문 주소를 물어본다(브라우저가 그 링크를 열 때 하는 일과 같다).
+  // 구글 안쪽 창구라 언제든 막힐 수 있다 — 개인 시험판에서만 쓰고, 출시판은 원문 주소를 주는 계약 출처로 바꾼다
+  async function askGoogle(link) {
+    const m = (link || '').match(/\/articles\/([A-Za-z0-9_-]+)/);
+    if (!m) return '';
+    const page = await M.getText(`https://news.google.com/rss/articles/${m[1]}`);
+    const sg = (page.match(/data-n-a-sg="([^"]+)"/) || [])[1], ts = (page.match(/data-n-a-ts="([^"]+)"/) || [])[1];
+    if (!sg || !ts) return '';
+    const inner = JSON.stringify(['garturlreq', [['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1], 'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0], m[1], +ts, sg]);
+    const res = await M.postForm('https://news.google.com/_/DotsSplashUi/data/batchexecute', { 'f.req': JSON.stringify([[['Fbv4je', inner, null, 'generic']]]) });
+    const line = res.split(String.fromCharCode(10)).find((x) => x.startsWith('[["wrb.fr"'));
+    if (!line) return '';
+    const got = JSON.parse(JSON.parse(line)[0][2]);
+    return got[0] === 'garturlres' && /^https?:/.test(got[1]) ? got[1] : '';
+  }
+  // 기사 끝의 기자 연락처 · 저작권 · 구독 안내 같은 줄은 본문이 아니다
+  const JUNK = /무단\s?전재|재배포\s?금지|저작권자|Copyright|ⓒ|©|구독|제보|기자\s*=|[\w.+-]+@[\w-]+\.[\w.]+|관련\s?기사|많이 본|댓글|로그인|공유하기|카카오톡|페이스북|글자\s?크기|인쇄|스크랩/;
+  // 기사 한 편의 본문을 찾아 읽는다 — 저장한 기사 · 쪽지의 「AI 정리」. 구글 뉴스 링크에서 원문 주소를 얻고, 안 되면 제목으로 찾는다.
+  // 제목 낱말이 절반 넘게 맞는 페이지만 그 기사로 본다. → { url, host, title, text } — 본문을 못 읽었으면 text 가 비고, 원문 주소도 못 찾으면 null(지어내지 않게 부르는 쪽이 멈춘다)
+  async function article(item, { onStep = () => {}, budget = 2400 } = {}) {
+    const ws = words(item.h), need = Math.max(2, Math.ceil(ws.length * 0.5));
+    const hit = (text) => { const low = (text || '').toLowerCase(); return ws.filter((w) => low.includes(w)).length; };
+    const body = (paras) => {
+      const out = []; let used = 0;
+      for (const t of paras) {
+        if (used >= budget) break;
+        if (JUNK.test(t) && t.length < 160) continue;
+        const cut = t.slice(0, budget - used);
+        out.push(cut); used += cut.length + 1;
+      }
+      return out.join(String.fromCharCode(10));
+    };
+    // text 가 비면 그 기사 본문을 읽지 못한 것(why: read 본문 없음 · match 제목과 다른 글)
+    // sure: 구글 뉴스 링크가 가리킨 바로 그 기사 — 제목 낱말을 덜 깐깐하게 본다(로그인 안내 같은 다른 글만 거른다)
+    const tryRead = async (url, title, sure) => {
+      const paras = await within(read(url), 7000).catch(() => []);
+      const text = body(paras), ok = text.length >= 200 && hit(text) >= (sure ? Math.min(2, need) : need);
+      return { url, title: title || item.h, host: host(url), text: ok ? text : '', why: ok ? '' : text.length < 200 ? 'read' : 'match' };
+    };
+    onStep('find');
+    const direct = fromGoogle(item.l) || await within(askGoogle(item.l), 9000).catch(() => '');
+    let first = null;
+    if (direct && !SKIP.test(direct)) { onStep('read'); first = await tryRead(direct, item.h, true); if (first.text) return first; }
+    const [a, b] = await Promise.all([within(ddg(item.h), 6000).catch(() => []), within(bing(item.h), 6000).catch(() => [])]);
+    const seen = new Set(), cands = [];
+    for (const r of [...a, ...b]) {
+      const key = r.url.replace(/[#?].*$/, '').replace(/[/]$/, '');
+      if (!r.url.startsWith('http') || seen.has(key) || SKIP.test(r.url)) continue;
+      seen.add(key);
+      const s = hit(r.title);
+      if (s >= need) cands.push({ r, s });
+    }
+    cands.sort((x, y) => y.s - x.s);
+    if (cands.length) {
+      onStep('read');
+      const got = (await Promise.all(cands.slice(0, 3).map((c) => tryRead(c.r.url, c.r.title)))).find((x) => x.text);
+      if (got) return got;
+    }
+    return first;                                             // 원문 주소는 알지만 본문을 못 읽었거나(text ''), 아무것도 못 찾았으면 null
+  }
   // → { sources: [{ n, title, url, text }], searched: 건수, pages: 읽은 페이지 수 }. onStep('search') · onStep('read', 페이지 수)로 단계를 알려 준다
   M.web = {
-    host, keywords,
+    host, keywords, article, read,
     async gather(query, { heads = [], onStep = () => {}, budget = 2600 } = {}) {
       const kws = keywords(query), ws = kws.length ? kws : words(query);
       onStep('search');

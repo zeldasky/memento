@@ -31,7 +31,7 @@ body.warping .words, body.warping .lifeline { opacity: 0; transition: none; }
 /* 뉴스 이벤트 장면 동안은 글 · 단추 · 주제 이름을 모두 숨긴다(옆 사람이 봐도 그림뿐) */
 body.eventing .top, body.eventing .words, body.eventing .lifeline { opacity: 0; pointer-events: none; }
 
-#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .45s ease; touch-action: none; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .45s ease, filter .6s ease; touch-action: none; }
 
 /* 위 띠 */
 .top {
@@ -117,16 +117,32 @@ body.scrubbing .dot span { color: var(--ink); font-size: 12px; }
   background: none; border: 0; pointer-events: auto; touch-action: none; color: var(--tint, var(--accent));
   filter: drop-shadow(0 0 6px rgba(0, 0, 0, .55));
 }
-.float-btn span { font-size: 12px; line-height: 1.2; color: var(--ink-dim); text-shadow: 0 1px 6px rgba(0, 0, 0, .8); white-space: nowrap; }
+/* 낱말은 어두운 알약 위에 — 밝은 하늘 · 도형 · 인생 줄과 겹쳐도 읽힌다 */
+.float-btn span {
+  padding: 2px 8px 3px; border-radius: 999px; font-size: 12.5px; font-weight: 500; line-height: 1.25; white-space: nowrap;
+  color: var(--ink); background: rgba(8, 10, 18, .66); border: 1px solid rgba(255, 255, 255, .12);
+}
+/* 쪽지가 떠 있는 동안은 배경 그림이 한 걸음 물러난다(스와이프를 내리면 돌아온다) */
+body.floating #scene { filter: brightness(.58) saturate(.85); }
 .float-line {
-  position: absolute; top: 100%; left: 0; display: flex; align-items: stretch; width: min(66vw, 268px); margin-top: 2px; border-radius: 12px;
+  position: absolute; top: 100%; left: 0; display: flex; flex-direction: column; width: min(82vw, 304px); margin-top: 2px; border-radius: 12px;
   pointer-events: auto; touch-action: none; overflow: hidden;
-  background: rgba(8, 10, 18, .94); border: 1px solid var(--line); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  background: rgba(8, 10, 18, .97); border: 1px solid var(--line); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   transform: translateX(var(--shift, -50%)); animation: lineIn .35s ease both;
 }
-.fl-text { flex: 1; min-width: 0; padding: 8px 6px 8px 10px; background: none; border: 0; text-align: left; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); word-break: keep-all; touch-action: none; }
+.float-line.up { top: auto; bottom: 100%; margin: 0 0 2px; }
+.fl-text { display: block; width: 100%; padding: 10px 12px 9px; background: none; border: 0; text-align: left; font: inherit; font-size: 13px; line-height: 1.45; color: var(--ink); word-break: keep-all; touch-action: none; }
 .fl-text small { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-faint); }
-.fl-brief { flex: none; width: 42px; display: grid; place-items: center; background: none; border: 0; border-left: 1px solid var(--line); color: var(--accent); touch-action: none; }
+/* 한 줄 아래 단추: 보기(AI 정리 · 원문) · 저장 · 연관 */
+.fl-acts { display: flex; border-top: 1px solid var(--line); }
+.fl-act {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 8px 2px 9px; background: none; border: 0; border-left: 1px solid var(--line);
+  font: inherit; font-size: 11px; white-space: nowrap; color: var(--ink-dim); touch-action: none;
+}
+.fl-act:first-child { border-left: 0; }
+.fl-act svg { color: var(--ink-dim); }
+.fl-act.main, .fl-act.main svg { color: var(--accent); }
+.fl-act.main { font-weight: 600; }
 @keyframes lineIn { from { opacity: 0; } to { opacity: 1; } }
 .float-tip {
   position: fixed; z-index: 2; left: 16px; right: 16px; margin: 0; bottom: calc(var(--safe-bottom) + 112px); text-align: center; pointer-events: none;
@@ -191,6 +207,10 @@ body.scrubbing .dot span { color: var(--ink); font-size: 12px; }
 #savedDaysSeg label { padding-left: 0; padding-right: 0; }
 /* 폰 안 AI */
 .ai-panel { margin-top: 11px; }
+/* 기사 한 편 정리(AI 정리 화면) */
+.reader-lead small { display: block; margin-top: 7px; font-size: 11.5px; color: var(--ink-faint); }
+.ai-panel.reader .ai-out { font-size: 14.5px; line-height: 1.68; }
+.ai-panel.reader .ai-src { align-self: auto; max-width: none; margin: -2px 0 10px; }
 .brief-card > .ai-panel { margin-top: 8px; }
 .ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-chips button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 999px; font: inherit; font-size: 12.5px; color: var(--ink); background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .16); }
@@ -272,6 +292,7 @@ body[data-page='1'] #pageSaved { transform: none; visibility: visible; transitio
 .saved-acts { position: absolute; right: 0; bottom: 6px; display: flex; }
 .saved-acts button { width: 38px; height: 38px; display: grid; place-items: center; background: none; border: 0; color: var(--ink-faint); }
 .saved-acts .act-brief { color: var(--accent); }
+.saved-list.wide .saved-open span { padding-right: 158px; }
 .saved-acts .act-pin.on { color: var(--accent); }
 .saved-acts .act-pin.on svg { fill: currentColor; }
 .saved-empty { padding: 60px 20px; font-size: 13.5px; line-height: 1.6; color: var(--ink-dim); text-align: center; word-break: keep-all; }

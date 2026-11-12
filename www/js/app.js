@@ -776,9 +776,9 @@
   $('#qClose').addEventListener('click', () => qdlg.close());
 
   /* ── 떠다니는 쪽지: 위로 스와이프하면 배경에 어울리는 사물이 낱말을 달고 떠오른다 ── */
-  // 낱말은 제목에서 뽑은 짧은 말(주제 이름 뺌). 누르면 기사 한 줄이 작게 펼쳐지고, 그 줄을 누르면 저장함으로 날아간다.
+  // 낱말은 제목에서 뽑은 짧은 말(주제 이름 뺌). 누르면 기사 한 줄이 작게 펼쳐지고, 제목을 누르면 바로 보고(AI 정리 또는 원문) 「저장」을 누르면 저장함으로 날아간다.
   // 저장함에서 누르면 원문으로. 아래로 스와이프하거나 30초 동안 손대지 않으면 사라진다. 뉴스 출처가 없는 빌드(출시판)에는 없다
-  const SAVEKEY = 'memento.saved', TAKENKEY = 'memento.taken', FLOAT_MS = 30e3, LINE_MS = 6e3, TIPKEY = 'memento.floatTip';
+  const SAVEKEY = 'memento.saved', TAKENKEY = 'memento.taken', FLOAT_MS = 30e3, LINE_MS = 9e3, TIPKEY = 'memento.floatTip';
   const TINTS = ['#f2c879', '#8fd3e8']; // 관심 1 · 관심 2를 색으로만 구분한다
   const OBJ = {
     bottle: '<path d="M10 3h4v3l1.5 3v10a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2V9L10 6z"/><path d="M10.5 12.5h3v4h-3z"/>',
@@ -884,7 +884,7 @@
     picks.forEach((k, i) => addFloat(k.word, k.item, k.topic, k.tint, i, picks.length, kind));
     lastShown = new Set(picks.map((k) => k.item.h));
     const seenTip = store.get(TIPKEY) || 0;
-    if (seenTip < 3) { store.set(TIPKEY, seenTip + 1); showTip('누르면 한 줄 · 그 줄을 누르면 저장 · 아래로 내리면 사라져요', 5000); }
+    if (seenTip < 3) { store.set(TIPKEY, seenTip + 1); showTip('낱말을 누르면 기사 한 줄 · 거기서 보기 · 저장 · 아래로 내리면 사라져요', 5000); }
   }
   function showFloats() {
     if (floating) { floatUntil = performance.now() + FLOAT_MS; refreshFloats(); return; }
@@ -918,33 +918,58 @@
     const line = document.createElement('div'); line.className = 'float-line';
     const text = document.createElement('button'); text.type = 'button'; text.className = 'fl-text';
     text.textContent = mask(f.item.h, f.topic);
-    const small = document.createElement('small'); small.textContent = `${f.item.s ? `${f.item.s} · ` : ''}${ago(f.item.t)} · 누르면 저장`;
+    const small = document.createElement('small'); small.textContent = `${f.item.s ? `${f.item.s} · ` : ''}${ago(f.item.t)}`;
     text.append(small);
-    text.onclick = () => { if (performance.now() - swipedAt > 350) saveFloat(f, line); };
-    const brief = document.createElement('button'); brief.type = 'button'; brief.className = 'fl-brief'; brief.setAttribute('aria-label', '연관 브리핑');
-    brief.innerHTML = M.iconSvg(BRIEF_SVG, 18);
-    brief.onclick = () => { closeLine(); openBrief(f.item.h, f.topic, f.word); };
-    line.append(text, brief);
+    // 제목을 누르면 바로 본다(폰 안 AI 가 있으면 앱 안에서 정리, 없으면 원문). 아래 단추로 고를 수도 있다
+    const tap = (fn) => () => { if (performance.now() - swipedAt > 350) fn(); };
+    text.onclick = tap(() => { closeLine(); readItem(f.item, f.topic, f.word); });
+    const acts = document.createElement('div'); acts.className = 'fl-acts';
+    const act = (label, svg, fn, cls = '') => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = `fl-act ${cls}`;
+      b.innerHTML = M.iconSvg(svg, 15); b.append(label); b.onclick = tap(fn); acts.append(b);
+    };
+    if (M.ai.has()) act('AI 정리', SPARK_SVG, () => { closeLine(); readItem(f.item, f.topic, f.word); }, 'main');
+    act('원문', BOOK_SVG, () => { floatUntil = performance.now() + FLOAT_MS; openLink(f.item.l); });
+    act('저장', KEEP_SVG, () => saveFloat(f, line));
+    act('연관', BRIEF_SVG, () => { closeLine(); openBrief(f.item.h, f.topic, f.word); });
+    line.append(text, acts);
     f.el.append(line); f.el.style.zIndex = 3; openFloat = f;
     // 화면 밖으로 나가지 않게 옮긴다
     const r = line.getBoundingClientRect(), half = r.width / 2, c = r.left + half;
     const dx = c < half + 10 ? half + 10 - c : c > W - half - 10 ? W - half - 10 - c : 0;
     line.style.setProperty('--shift', `calc(-50% + ${dx}px)`);
+    // 아래에 자리가 모자라면(아래 단추 · 인생 줄에 닿으면) 쪽지 위로 연다
+    const tab = $('#toSaved').getBoundingClientRect();
+    if (r.bottom > Math.min(H - 12, (tab.top || H) - 8)) line.classList.add('up');
     closeLine.t = setTimeout(closeLine, LINE_MS);
   }
-  // 그 줄을 누르면: 저장함 아이콘으로 날아가고 쪽지는 사라진다
-  function saveFloat(f, line) {
-    const it = f.item;
+  // 저장함에 넣는다. 같은 소식 · 같은 낱말을 단 쪽지는 함께 가라앉는다(except 는 날아가는 그림을 따로 그리는 쪽지)
+  function keepItem(it, topic, word, except) {
     floatUntil = performance.now() + FLOAT_MS;
     if (!isSaved(it)) {
-      saved.unshift({ h: it.h, l: it.l, s: it.s || '', t: it.t, topic: f.topic, at: Date.now() });
+      saved.unshift({ h: it.h, l: it.l, s: it.s || '', t: it.t, topic, at: Date.now() });
       if (saved.length > 200) { const k = saved.map((x) => !!x.pin).lastIndexOf(false); if (k >= 0) saved.splice(k, 1); }
       store.set(SAVEKEY, saved);
-      taken.push({ h: it.h, w: f.word, topic: f.topic, at: Date.now() });
+      taken.push({ h: it.h, w: word || '', topic, at: Date.now() });
       store.set(TAKENKEY, taken);
     }
-    // 같은 소식 · 같은 낱말을 단 다른 쪽지도 함께 가라앉는다
-    for (const o of floats) if (o !== f && !o.gone && o.item && o.topic === f.topic && (o.word === f.word || M.newsSameStory(o.item.h, it.h, f.topic))) o.gone = performance.now();
+    for (const o of floats) if (o !== except && !o.gone && o.item && o.topic === topic && ((word && o.word === word) || M.newsSameStory(o.item.h, it.h, topic))) o.gone = performance.now();
+    $('#savedCount').textContent = saved.length;
+  }
+  // 기사 보기: 폰 안 AI 가 있으면 앱 안에서 원문을 읽어 정리해 보여 주고(브라우저로 나가지 않는다), 없으면 원문을 연다
+  function readItem(it, topic, word) {
+    floatUntil = performance.now() + FLOAT_MS;
+    if (!M.ai.has()) { openLink(it.l); return; }
+    M.openReader({
+      item: it, mask: (x) => mask(x, topic), openLink, saved: isSaved(it),
+      onSave: () => { keepItem(it, topic, word); if (page) renderSaved(); },
+      onClose: () => { if (floating) floatUntil = performance.now() + FLOAT_MS; },
+    });
+  }
+  // 「저장」을 누르면: 저장함 아이콘으로 날아가고 쪽지는 사라진다
+  function saveFloat(f, line) {
+    const it = f.item;
+    keepItem(it, f.topic, f.word, f);
     const from = line.getBoundingClientRect(), to = $('#toSaved').getBoundingClientRect();
     const fly = document.createElement('p'); fly.className = 'fly-line'; fly.textContent = mask(it.h, f.topic);
     Object.assign(fly.style, { left: `${from.left + 10}px`, top: `${from.top + 8}px`, width: `${from.width - 20}px` });
@@ -975,10 +1000,12 @@
       const y = U.lerp(H + 40, yt, ease1) + out * 50;
       f.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
       f.btn.firstChild.style.transform = `rotate(${(Math.sin(f.ph * 1.3) * tilt).toFixed(3)}rad)`;
-      f.el.style.opacity = String((up > 0 ? Math.min(1, up * 2.5) : 0) * (1 - out) * 0.92);
+      f.el.style.opacity = String((up > 0 ? Math.min(1, up * 2.5) : 0) * (1 - out) * (held ? 1 : 0.92));   // 펼친 줄은 배경이 비치지 않게
     }
   }
   const BOOK_SVG = '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
+  const KEEP_SVG = '<path d="M6 3.5h12v17l-6-4-6 4z"/>';
+  const SPARK_SVG = '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>';
   const DEL_SVG = '<path d="M6 6l12 12M18 6L6 18"/>';
   const PIN_SVG = '<path d="M9 3h6l-1 6 4 4v2H6v-2l4-4z"/><path d="M12 15v6"/>';
   const BRIEF_SVG = '<circle cx="12" cy="12" r="2.6"/><circle cx="5" cy="5" r="1.7"/><circle cx="19" cy="5" r="1.7"/><circle cx="5" cy="19" r="1.7"/><circle cx="19" cy="19" r="1.7"/><path d="M10.2 10.2L6.3 6.3M13.8 10.2l3.9-3.9M10.2 13.8l-3.9 3.9M13.8 13.8l3.9 3.9"/>';
@@ -988,26 +1015,28 @@
   }
   function renderSaved() {
     const box = $('#savedList'); box.innerHTML = '';
+    box.classList.toggle('wide', M.ai.has());              // 단추가 넷이면 글이 단추 밑으로 들어가지 않게
     $('#savedCount2').textContent = saved.length ? `${saved.length}개` : '';
     const canDigest = M.ai.has() && saved.length >= 2;
     $('#savedDigest').hidden = !canDigest; $('#savedGap').hidden = canDigest;
     $('#savedCount').textContent = saved.length;
     if (!saved.length) {
       const li = document.createElement('li'); li.className = 'saved-empty';
-      li.textContent = `떠다니는 쪽지를 눌러 기사 한 줄을 펼치고, 그 줄을 누르면 여기로 옮겨져요. ${st.savedDays}일이 지나면 정리되고, 핀을 꽂으면 남아요`;
+      li.textContent = `떠다니는 쪽지를 눌러 기사 한 줄을 펼치고 「저장」을 누르면 여기로 옮겨져요. ${st.savedDays}일이 지나면 정리되고, 핀을 꽂으면 남아요`;
       box.append(li);
       return;
     }
     [...saved].sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0)).forEach((it) => {
       const li = document.createElement('li'); li.className = `saved-item${it.pin ? ' pinned' : ''}`;
       const open = document.createElement('button'); open.type = 'button'; open.className = 'saved-open';
-      open.innerHTML = `<b></b><span>${M.iconSvg(BOOK_SVG, 13)}<em></em><em class="left"></em></span>`;
+      open.innerHTML = `<b></b><span>${M.iconSvg(M.ai.has() ? SPARK_SVG : BOOK_SVG, 13)}<em></em><em class="left"></em></span>`;
       open.querySelector('b').textContent = mask(it.h, it.topic);
       open.querySelector('em').textContent = `${it.s ? `${it.s} · ` : ''}${ago(it.t)}`;
       open.querySelector('.left').textContent = it.pin ? '· 핀 꽂음' : `· ${leftText(it)}`;
-      open.onclick = () => { if (performance.now() - swipedAt > 350) openLink(it.l); };
+      open.onclick = () => { if (performance.now() - swipedAt > 350) readItem(it, it.topic); };
       const acts = document.createElement('div'); acts.className = 'saved-acts';
       const act = (cls, label, svg, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.setAttribute('aria-label', label); b.innerHTML = M.iconSvg(svg, 17); b.onclick = fn; acts.append(b); };
+      if (M.ai.has()) act('act-link', '원문 열기', BOOK_SVG, () => openLink(it.l));
       act('act-brief', '연관 브리핑', BRIEF_SVG, () => openBrief(it.h, it.topic));
       act(`act-pin${it.pin ? ' on' : ''}`, it.pin ? '핀 빼기' : '지우지 않게 핀 꽂기', PIN_SVG, () => {
         it.pin = !it.pin;

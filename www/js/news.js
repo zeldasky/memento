@@ -35,6 +35,19 @@
     return r.text();
   }
   M.getText = getText;
+  // 폼으로 보내고 글을 받는다(web.js 가 구글 뉴스 링크의 원문 주소를 물을 때) — 앱에서만 된다(브라우저는 CORS 에 막힌다)
+  M.postForm = async (url, form) => {
+    const cap = window.Capacitor, H = cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins.CapacitorHttp;
+    const type = 'application/x-www-form-urlencoded;charset=UTF-8';
+    if (H) {
+      const r = await H.post({ url, data: form, responseType: 'text', connectTimeout: 6000, readTimeout: 8000, headers: { 'Content-Type': type, 'Accept-Language': 'ko-KR,ko' } });
+      if (r.status !== 200) throw new Error(`뉴스 ${r.status}`);
+      return typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
+    }
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': type }, body: new URLSearchParams(form).toString() });
+    if (!r.ok) throw new Error(`뉴스 ${r.status}`);
+    return r.text();
+  };
   M.fetchTopicNews = (topic) =>
     getText(`https://news.google.com/rss/search?q=${encodeURIComponent(`${topic} when:1d`)}&hl=ko&gl=KR&ceid=KR:ko`).then(M.parseRss);
 

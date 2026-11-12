@@ -601,12 +601,14 @@
       const low = (ALIAS[opt.word.toLowerCase()] || opt.word).toLowerCase();
       if (ctl.g.df.has(low)) ctl.trail = [low];
     }
+    $('#briefTitle').textContent = '연관 브리핑';
     $('#brief').hidden = false;
     render();
   };
   // 저장한 기사 엮어 읽기: 정리되기 전에 오늘 저장한 것들이 무슨 이야기였는지
   M.openDigest = (opt) => {
     ctl = { ...opt, aiCache: new Map(), chats: new Map() };
+    $('#briefTitle').textContent = '엮어 읽기';
     const body = $('#briefBody'); body.innerHTML = '';
     $('#brief').hidden = false;
     const lead = el('section', 'brief-lead', null, body);
@@ -622,6 +624,102 @@
       el('b', '', opt.mask(d.h, d.topic), b); el('span', '', `${d.s ? `${d.s} · ` : ''}${ago(d.t)}`, b);
       b.onclick = () => opt.openLink(d.l);
     }
+  };
+  /* ── 기사 한 편을 앱 안에서: 원문을 찾아 읽고 폰 안 AI 가 정리한다(브라우저로 나가지 않는다). 시험판 전용 ── */
+  const SUMKEY = 'memento.sum';                               // 정리해 둔 글 { 제목: { text, url, host, at } } — 다시 열면 모델 없이 바로 보인다
+  const sumAll = () => { try { return JSON.parse(localStorage.getItem(SUMKEY)) || {}; } catch (e) { return {}; } };
+  function sumKeep(h, rec) {
+    const all = sumAll(); all[h] = rec;
+    const keys = Object.keys(all).sort((a, b) => all[b].at - all[a].at);
+    for (const k of keys) if (keys.indexOf(k) >= 30 || Date.now() - all[k].at > 8 * 864e5) delete all[k];
+    try { localStorage.setItem(SUMKEY, JSON.stringify(all)); } catch (e) { /* 저장 못 해도 화면은 돈다 */ }
+  }
+  // { item: { h, l, s, t }, mask, openLink, saved, onSave, onClose }
+  M.openReader = (opt) => {
+    ctl = { ...opt, aiCache: new Map(), chats: new Map() };
+    const mine = ctl, it = opt.item;
+    $('#briefTitle').textContent = 'AI 정리';
+    const body = $('#briefBody'); body.innerHTML = '';
+    $('#brief').hidden = false;
+    const lead = el('section', 'brief-lead reader-lead', null, body);
+    el('p', '', opt.mask(it.h), lead);
+    el('small', '', `${it.s ? `${it.s} · ` : ''}${ago(it.t)}`, lead);
+    const wrap = el('div', 'ai-panel reader', null, body);
+    const note = el('p', 'ai-note', null, wrap); note.hidden = true;
+    const bar = el('div', 'ai-bar', null, wrap); bar.hidden = true; const fill = el('i', '', null, bar);
+    const out = el('p', 'ai-out', null, wrap); out.hidden = true;
+    const src = el('div', 'ai-src', null, wrap);
+    const tail = el('p', 'ai-note', null, wrap); tail.hidden = true;
+    const chips = el('div', 'ai-chips', null, wrap);
+    const say = (t, warn, live) => { note.textContent = t || ''; note.hidden = !t; note.className = `ai-note${warn ? ' warn' : ''}${live ? ' live' : ''}`; };
+    const chip = (label, cls, fn) => { const b = el('button', cls, label, chips); b.type = 'button'; b.onclick = fn; return b; };
+    let url = it.l, art = null, allow = false, got = null;
+    const again = chip('다시 정리', '', () => run(true)); again.hidden = true;
+    const ask = chip('물어보기', '', () => {
+      openChat(`art|${it.h}`, it.h, [it.h]);
+      if (chat && got && art && !chat.lastSources) chat.lastSources = [{ n: 1, title: it.h, url, text: art.text.slice(0, 1800) }];
+    }); ask.hidden = true;
+    chip('원문 열기', '', () => opt.openLink(url));
+    if (opt.onSave) {
+      const keep = chip(opt.saved ? '저장됨' : '저장', '', () => { opt.onSave(); keep.textContent = '저장됨'; keep.disabled = true; });
+      keep.disabled = !!opt.saved;
+    }
+    const busy = (on) => { again.disabled = on; ask.disabled = on; };
+    function show(rec) {
+      got = rec; if (rec.url) url = rec.url;
+      out.hidden = false; out.classList.remove('run'); renderAnswer(out, mine.mask(rec.text));
+      src.innerHTML = '';
+      if (rec.host) { const b = el('button', '', null, src); b.type = 'button'; el('b', '', '원문', b); b.append(mine.mask(rec.host)); b.onclick = () => opt.openLink(url); }
+      tail.hidden = false; tail.textContent = '기사 본문을 읽고 폰 안 AI 가 정리한 글이에요. 틀릴 수 있으니 중요한 건 원문으로 확인하세요.';
+      again.hidden = false; ask.hidden = !art;
+    }
+    async function run(force) {
+      const kept = !force && sumAll()[it.h];
+      if (kept) { show(kept); return; }
+      busy(true); out.hidden = true; tail.hidden = true; src.innerHTML = '';
+      const t0 = Date.now();
+      if (!art || !art.text) {
+        say('Finding the article…', false, true);
+        try { art = await M.web.article(it, { onStep: (s) => { if (mine === ctl && s === 'read') say('Reading the article…', false, true); } }); } catch (e) { art = null; }
+        if (mine !== ctl) return;
+        if (art && art.url) url = art.url;
+        if (!art || !art.text) {
+          say(art ? '이 기사는 본문을 읽지 못했어요(사이트가 막았거나 아주 짧은 기사예요). 제목만으로는 정리하지 않아요 — 원문 열기로 확인해 주세요.' : '원문을 찾지 못했어요. 원문 열기로 확인해 주세요.', true);
+          busy(false); again.hidden = false; return;
+        }
+      }
+      const st = await readyModel(mine, {
+        say, bar, fill, busy,
+        ask: async (s) => {
+          if (allow) return true;
+          say(`AI 모델(${gb(s.size)})을 폰에 한 번 받아요.${s.wifi ? '' : ' 지금은 모바일 데이터예요 — 와이파이에서 받는 게 좋아요.'}`, !s.wifi);
+          const b = chip('AI 모델 받기', 'main', () => { allow = true; b.remove(); run(force); });
+          return false;
+        },
+      });
+      if (!st) { if (mine === ctl) busy(false); return; }
+      say(st.loaded ? 'Summarizing…' : 'Loading model…', false, true);
+      out.hidden = false; out.textContent = ''; out.classList.add('run');
+      const stop = chip('멈추기', 'ai-stop', () => M.ai.stop());
+      try {
+        const r = await M.ai.run(M.aiPrompts.article(it.h, art.text), (full) => { if (mine === ctl) { renderAnswer(out, mine.mask(full)); say('Summarizing…', false, true); } });
+        if (mine !== ctl) return;
+        const text = r.text.trim();
+        if (!text) throw new Error('empty');
+        const rec = { text, url: art.url, host: art.host, at: Date.now() };
+        if (r.stop !== 'user') sumKeep(it.h, rec);
+        show(rec);
+        say(`Read ${mine.mask(art.host)} · Summarized in ${Math.max(1, Math.round((Date.now() - t0) / 1000))}s`);
+      } catch (e) {
+        if (mine !== ctl) return;
+        out.classList.remove('run'); out.hidden = !out.textContent; again.hidden = false;
+        say(AI_ERR[e.message] || `AI 가 정리하지 못했어요. 다시 정리를 눌러 주세요. (${e.message})`, true);
+      } finally {
+        stop.remove();
+        if (mine === ctl) busy(false);
+      }
+    }
+    run(false);
   };
   M.closeBrief = () => {
     if (!ctl) return;
